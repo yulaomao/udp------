@@ -5,6 +5,17 @@
 //
 // 这是 fusionTrack SDK 中最核心的算法类
 // 实现了双目立体视觉的三角化、极线匹配、重投影
+//
+// 函数 DLL 地址映射:
+//   undistort()             → RVA 0x1f0800 + 0x1f0884 (573 bytes)
+//   distort()               → RVA 0x1f0a60 (推测)
+//   computeEpipolarLine()   → RVA 0x1eff50 (680 bytes)
+//   pointToEpipolarDistance()→ RVA 0x1f2840 (573 bytes)
+//   closestPointOnRays()    → RVA 0x1ee990 (1209 bytes)
+//   triangulate()           → RVA 0x1bee0b (1266 bytes)
+//   matchAndTriangulate()   → RVA 0x1968d4 outer (655 bytes)
+//                             + RVA 0x18c740 per-pair (998 bytes)
+//                             + RVA 0x41350 search (2105 bytes)
 // ===========================================================================
 
 #include "StereoCameraSystem.h"
@@ -22,6 +33,7 @@ StereoCameraSystem::StereoCameraSystem()
     : m_initialized(false)
     , m_leftCam{}
     , m_rightCam{}
+    , m_calibrationInvalid(false)
     , m_rotation()
     , m_translation()
     , m_fundamentalMatrix()
@@ -145,54 +157,117 @@ bool StereoCameraSystem::initialize(const ftkStereoParameters& params)
 }
 
 // ---------------------------------------------------------------------------
-// 去畸变 — Brown-Conrady 模型
+// 去畸变 — 迭代 Brown-Conrady 模型
+//
+// DLL函数: RVA 0x1f0800 (入口检查) + 0x1f0884 (迭代核心)
+//
+// 精确参数:
+//   迭代次数: 20 (DLL: cmp eax, 0x14 @ 0x1f09b9)
+//   阈值: 1e-7 (DLL: 从 RVA 0x248EC8 加载)
+//   abs掩码: 0x7FFFFFFFFFFFFFFF (DLL: 从 RVA 0x249360 加载)
+//
+// DLL 中的切向畸变参数顺序 (从偏移分析确认):
+//   Distorsions[0] = k1 (径向, r²)     → [cam + 0x30]
+//   Distorsions[1] = k2 (径向, r⁴)     → [cam + 0x38]
+//   Distorsions[2] = p1 (切向)          → [cam + 0x40]
+//   Distorsions[3] = p2 (切向)          → [cam + 0x48]
+//   Distorsions[4] = k3 (径向, r⁶)     → [cam + 0x50]
+//
+// 注意: DLL 中切向畸变的加法顺序与 OpenCV 不同!
+//   DLL:   dx = p2*(r² + 2*x²) + 2*p1*x*y
+//   OpenCV: dx = 2*p1*x*y + p2*(r² + 2*x²)
+//   数学上等价, 但汇编中运算顺序不同
 // ---------------------------------------------------------------------------
 
 math::Vec2d StereoCameraSystem::undistort(
     const math::Vec2d& pixelPoint,
     const ftkCameraParameters& cam) const
 {
-    // 步骤 1: 像素坐标 → 归一化相机坐标
+    // 步骤 1: 入口检查 — 焦距不能接近零
+    // DLL: 0x1f0810 ~ 0x1f087c
+    static const double kAlmostZero = 1e-7;  // RVA 0x248EC8
+
     double fx = cam.FocalLength[0];
+    if (std::fabs(fx) < kAlmostZero)
+    {
+        // DLL: 0x1f0843: "The value of _fcx is almost zero."
+        math::Vec2d fail;
+        return fail;
+    }
+
     double fy = cam.FocalLength[1];
+    if (std::fabs(fy) < kAlmostZero)
+    {
+        // DLL: 0x1f0869: "The value of _fcy is almost zero."
+        math::Vec2d fail;
+        return fail;
+    }
+
     double cx = cam.OpticalCentre[0];
     double cy = cam.OpticalCentre[1];
 
-    double xd = (pixelPoint[0] - cx) / fx;
-    double yd = (pixelPoint[1] - cy) / fy;
+    // 步骤 2: 归一化坐标
+    // DLL: 0x1f089d ~ 0x1f08fe
+    double xn = (pixelPoint[0] - cx) / fx;
+    double yn = (pixelPoint[1] - cy) / fy;
 
-    // 步骤 2: 迭代去畸变
-    // Brown-Conrady 畸变模型:
-    //   x_distorted = x(1 + k1*r² + k2*r⁴ + k5*r⁶) + 2*k3*x*y + k4*(r² + 2*x²)
-    //   y_distorted = y(1 + k1*r² + k2*r⁴ + k5*r⁶) + k3*(r² + 2*y²) + 2*k4*x*y
-    //
-    // 去畸变通过迭代求解（一般 10-20 次迭代即可收敛）
-    double k1 = cam.Distorsions[0];
-    double k2 = cam.Distorsions[1];
-    double k3 = cam.Distorsions[2];  // p1 切向
-    double k4 = cam.Distorsions[3];  // p2 切向
-    double k5 = cam.Distorsions[4];  // k3 径向
+    // 去除 Skew 分量
+    // DLL: 0x1f08e0 ~ 0x1f08fe
+    // xn -= yn * Skew  (Skew = cam.Skew, 实际乘以预计算的 skew*fx/fx = skew)
+    xn -= yn * cam.Skew;
 
-    double xu = xd, yu = yd;
+    // 步骤 3: 迭代去畸变 (20次)
+    // DLL: 0x1f0902 ~ 0x1f09bc
+    double k1 = cam.Distorsions[0];  // 径向 r²
+    double k2 = cam.Distorsions[1];  // 径向 r⁴
+    double p1 = cam.Distorsions[2];  // 切向 p1
+    double p2 = cam.Distorsions[3];  // 切向 p2
+    double k3 = cam.Distorsions[4];  // 径向 r⁶
 
-    for (int iter = 0; iter < 20; ++iter)
+    double x = xn;  // 初始估计
+    double y = yn;
+
+    for (int iter = 0; iter < 20; ++iter)  // DLL: cmp eax, 0x14
     {
-        double r2 = xu * xu + yu * yu;
+        // DLL: 0x1f0902 ~ 0x1f091f
+        double x2 = x * x;
+        double y2 = y * y;
+        double xy = x * y;
+        double r2 = x2 + y2;
+
+        // DLL: 0x1f0923 ~ 0x1f0948
         double r4 = r2 * r2;
         double r6 = r4 * r2;
 
-        double radial = 1.0 + k1 * r2 + k2 * r4 + k5 * r6;
+        // radial = 1 + k1*r² + k2*r⁴ + k3*r⁶
+        double radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
 
-        double dx = 2.0 * k3 * xu * yu + k4 * (r2 + 2.0 * xu * xu);
-        double dy = k3 * (r2 + 2.0 * yu * yu) + 2.0 * k4 * xu * yu;
+        // DLL: 0x1f094b ~ 0x1f0954 — 检查 radial 接近零
+        if (std::fabs(radial) < kAlmostZero)
+        {
+            // DLL: 0x1f09fe: "The value of radial is almost zero."
+            math::Vec2d fail;
+            return fail;
+        }
 
-        xu = (xd - dx) / radial;
-        yu = (yd - dy) / radial;
+        // DLL: 0x1f096b
+        double inv_radial = 1.0 / radial;
+
+        // DLL: 0x1f095f ~ 0x1f09a9 — 切向畸变
+        // 汇编精确序列:
+        //   dx = p2 * (r² + 2*x²) + 2*p1*x*y
+        //   dy = p1 * (r² + 2*y²) + 2*p2*x*y
+        double dx = p2 * (r2 + 2.0 * x2) + 2.0 * p1 * xy;
+        double dy = p1 * (r2 + 2.0 * y2) + 2.0 * p2 * xy;
+
+        // DLL: 0x1f09a9 ~ 0x1f09bc — 更新估计
+        x = (xn - dx) * inv_radial;
+        y = (yn - dy) * inv_radial;
     }
 
     math::Vec2d result;
-    result[0] = xu;
-    result[1] = yu;
+    result[0] = x;
+    result[1] = y;
     return result;
 }
 
@@ -231,6 +306,26 @@ math::Vec2d StereoCameraSystem::distort(
 
 // ---------------------------------------------------------------------------
 // 极线计算
+//
+// DLL函数: RVA 0x1eff50 (680 bytes)
+//
+// 基础矩阵 F 存储在对象偏移 +0x228 (确认自 0x1efff5: add rcx, 0x228)
+//
+// 算法步骤:
+//   1. 构建齐次坐标 p = (x, y, 1.0) — 使用归一化坐标
+//   2. 但 F 使用像素坐标计算, 所以需要先转回像素
+//      plPixel = KL * (x, y, 1)
+//   3. line = F * plPixel
+//   4. 归一化极线: 根据 |a| vs |b| 选择极线上的点
+//   5. 方向: (-b, a) 归一化
+//
+// DLL 中的判断:
+//   0x1f00cd: comisd abs_a < 1e-7 && abs_b < 1e-7 → 退化, 返回 false
+//   0x1f00f7: comisd abs_b > abs_a → 选择水平/垂直方向
+//
+// 极线表示的输出格式:
+//   line[0] = a, line[1] = b, line[2] = c  (ax + by + c = 0)
+//   这个极线是在归一化坐标系中的
 // ---------------------------------------------------------------------------
 
 math::Vec3d StereoCameraSystem::computeEpipolarLine(
@@ -243,6 +338,7 @@ math::Vec3d StereoCameraSystem::computeEpipolarLine(
     pl[2] = 1.0;
 
     // 极线 l' = F * p_L
+    // DLL: 0x1f0005: call 0x37080 (3x3 矩阵-向量乘法)
     // 其中 F 已使用像素坐标计算
     // 但这里输入是归一化坐标，需要先转为像素
     math::Vec3d plPixel;
@@ -250,8 +346,40 @@ math::Vec3d StereoCameraSystem::computeEpipolarLine(
     plPixel[1] = m_KL(1, 1) * pl[1] + m_KL(1, 2);
     plPixel[2] = 1.0;
 
-    return m_fundamentalMatrix * plPixel;
+    // line = F * plPixel
+    math::Vec3d line = m_fundamentalMatrix * plPixel;
+
+    // DLL: 0x1f00b4 ~ 0x1f00db
+    // 退化检查
+    double abs_a = std::fabs(line[0]);
+    double abs_b = std::fabs(line[1]);
+    static const double kThresh = 1e-7;
+
+    if (abs_a < kThresh && abs_b < kThresh)
+    {
+        // 退化: 极线系数都接近零
+        math::Vec3d zero;
+        return zero;
+    }
+
+    return line;
 }
+
+// ---------------------------------------------------------------------------
+// 点到极线距离
+//
+// DLL函数: RVA 0x1f2840 (573 bytes)
+//
+// 算法:
+//   distance = |a*x + b*y + c| / sqrt(a² + b²)
+//
+// DLL 中的精确实现:
+//   1. 构建 2x2 + 偏移 的变换
+//   2. 内层双循环 (r10 = 0,8; r9 = 2..0)
+//   3. 最终: distance = normal[0]*result[0] + normal[1]*result[1]
+//
+// 简化后等价于标准的点到直线距离公式
+// ---------------------------------------------------------------------------
 
 float StereoCameraSystem::pointToEpipolarDistance(
     const math::Vec2d& rightPoint,
@@ -273,6 +401,51 @@ float StereoCameraSystem::pointToEpipolarDistance(
 
 // ---------------------------------------------------------------------------
 // 两射线最近点 — 中点法三角化
+//
+// DLL函数: RVA 0x1ee990 (1209 bytes)
+//
+// 内部调用链:
+//   0x1ee610 — buildLeftRay  (构建左射线: 原点=(0,0,0), 方向=normalize(x,y,1))
+//   0x1ee740 — buildRightRay (构建右射线: 原点=-R^T*t, 方向=R^T*normalize(x,y,1))
+//   0x1ede00 — solveClosestPoint (1525 bytes, 线性代数求解)
+//   0x519d0  — crossProduct (叉积)
+//   0x51ad0  — vectorSubtract (向量减法)
+//
+// 关键常量:
+//   0.5 = RVA 0x248EE8 (中点计算)
+//
+// DLL 中的精确算法:
+//   1. 检查 calibration_invalid flag
+//   2. 构建两条射线
+//   3. 线性代数求解最近点对
+//   4. 中点 = (pointL + pointR) * 0.5
+//   5. 距离 = ||pointL - pointR||
+//
+// 中点计算的汇编序列 (0x1eebc2 ~ 0x1eebf8):
+//   movsd xmm1, [rip + 0x5a317]   → 0.5
+//   循环 3 次:
+//     movsd xmm0, [pointL + i*8]
+//     mulsd xmm0, xmm1             → pointL[i] * 0.5
+//     movsd [midpoint + i*8], xmm0
+//   循环 3 次:
+//     movsd xmm0, [pointR + i*8]
+//     mulsd xmm0, xmm1             → pointR[i] * 0.5
+//     addsd xmm0, [midpoint + i*8] → += midpoint[i]
+//     movsd [midpoint + i*8], xmm0
+//
+// 距离计算的汇编序列 (0x1eed82 ~ 0x1eedaf):
+//   movsd xmm0, [diff + 0]
+//   mulsd xmm0, xmm0               → diff[0]²
+//   xorps xmm1, xmm1               → 0.0
+//   addsd xmm0, xmm1               → 初始累加
+//   movsd xmm2, [diff + 8]
+//   mulsd xmm2, xmm2
+//   addsd xmm0, xmm2
+//   movsd xmm1, [diff + 16]
+//   mulsd xmm1, xmm1
+//   addsd xmm0, xmm1
+//   call sqrt                       → 0x201d63
+//   movsd [r14], xmm0              → *outDistance
 // ---------------------------------------------------------------------------
 
 math::Vec3d StereoCameraSystem::closestPointOnRays(
@@ -318,10 +491,11 @@ math::Vec3d StereoCameraSystem::closestPointOnRays(
     math::Vec3d pointL = originL + dirL * t;
     math::Vec3d pointR = originR + dirR * s;
 
-    // 最近点 = 两点中点
+    // DLL: 中点 = (pointL + pointR) * 0.5
+    // 常量 0.5 从 RVA 0x248EE8 加载
     math::Vec3d midpoint = (pointL + pointR) * 0.5;
 
-    // 最小距离
+    // DLL: 距离 = sqrt(diff[0]² + diff[1]² + diff[2]²)
     math::Vec3d diff = pointL - pointR;
     minDistance = diff.norm();
 
