@@ -252,7 +252,7 @@ SENSOR_LEFT = 0x00
 SENSOR_RIGHT = 0xC0
 
 # 协议尺寸常量 (从 devPacketReader.tpp 逆向)
-VENDOR_HEADER_SIZE = 24         # UDP 分片头大小
+VENDOR_HEADER_SIZE = 24         # UDP 分片头大小 (同 VendorHeader.STRUCT_SIZE)
 INNER_HEADER_SIZE = 80          # 内层帧头大小
 ROI_RECORD_SIZE = 16            # ROI 记录大小
 PC_COMMAND_SIZE = 24            # PC 命令大小
@@ -712,6 +712,10 @@ class OnChipCalibration:
             vals = struct.unpack_from(f'<{cls.LEFT_BLOCK_DOUBLES + cls.RIGHT_BLOCK_DOUBLES}d',
                                       data, off)
 
+            # RIGHT extrinsics: indices 26-28 = rotation, 29-31 = translation
+            rx, ry, rz = vals[26], vals[27], vals[28]
+            tx, ty, tz = vals[29], vals[30], vals[31]
+
             record = {
                 'index': i,
                 'left_camera': {
@@ -729,9 +733,9 @@ class OnChipCalibration:
                     'k3': vals[24], 'skew': vals[25],
                 },
                 'extrinsics': {
-                    'rotation_rodrigues': [vals[26], vals[27], vals[28]],
-                    'translation_mm': [vals[29], vals[30], vals[31]],
-                    'baseline_mm': float(np.linalg.norm([vals[29], vals[30], vals[31]])),
+                    'rotation_rodrigues': [rx, ry, rz],
+                    'translation_mm': [tx, ty, tz],
+                    'baseline_mm': float(np.linalg.norm([tx, ty, tz])),
                 },
             }
             cal.temperature_records.append(record)
