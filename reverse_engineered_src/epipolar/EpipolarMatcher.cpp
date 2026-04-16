@@ -421,12 +421,23 @@ bool undistortPoint(const CameraIntrinsics* cam,
 
     // Skew 修正
     // DLL: 0x1f09e6-0x1f09f8
-    // xmm1 = Skew * fcx * y_final
-    // *outX += xmm1
-    double skew_correction = cam->skew_fcx * y;  // skew_fcx 实际就是 skew (或 skew * fcx)
-    // 根据最终分析: [rcx+0x28] = Skew, [rcx+0x08] = fcx
-    // 所以: correction = Skew * fcx * y
-    *outX += cam->skew_fcx * cam->fcx * y;
+    //
+    // 汇编:
+    //   movsd xmm1, [rcx + 0x28]   → Skew (或 skew_fcx = Skew * fcx)
+    //   mulsd xmm1, [rcx + 0x08]   → * fcx
+    //   mulsd xmm1, y_final
+    //   addsd [rdx], xmm1          → *outX += ...
+    //
+    // 如果 [rcx + 0x28] = Skew (纯 skew 系数):
+    //   修正 = Skew * fcx * y_final → *outX = fcx*x + Skew*fcx*y + ccx
+    //   这等价于 K 矩阵第一行: [fcx, Skew*fcx, ccx] * [x, y, 1]^T ✓
+    //
+    // 如果 [rcx + 0x28] = skew_fcx (= Skew * fcx 预计算):
+    //   修正 = Skew*fcx * fcx * y → 不正确 (多了一个 fcx)
+    //
+    // 结论: [rcx + 0x28] 就是 Skew 本身, 不是预计算值
+    //   修正 = Skew * fcx * y → *outX = fcx*(x + Skew*y) + ccx ✓
+    *outX += cam->skew * fcx * y;
 
     return true;
 }

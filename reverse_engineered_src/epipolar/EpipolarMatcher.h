@@ -83,7 +83,9 @@ struct CameraIntrinsics
     double skew;          // +0x10: 倾斜系数
     double ccx;           // +0x18: 光心x
     double ccy;           // +0x20: 光心y
-    double skew_fcx;      // +0x28: 预计算 skew * fcx
+    double skew_fcx;      // +0x28: Skew 系数 (注意: 虽名为 skew_fcx, 实为纯 Skew 值)
+                          //         DLL 中 [rcx+0x28] 配合 [rcx+0x08]=fcx 一起使用
+                          //         在 undistort 输出中: *outX += Skew * fcx * y
     double k1;            // +0x30: 径向畸变k1 (r^2)
     double k2;            // +0x38: 径向畸变k2 (r^4)
     double p1;            // +0x40: 切向畸变p1
