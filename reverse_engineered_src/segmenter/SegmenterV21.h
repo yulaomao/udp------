@@ -17,18 +17,32 @@
 //   "Seed Expansion Tolerance" — .?AVSeedExpansionToleranceGetSetter@@
 //   "FTK_ERR_SEG_OVERFLOW" — 分割溢出错误
 //
+// DLL函数地址:
+//   配置注册函数:   0x325A0 - 0x3438B (7659 bytes)
+//   分割器初始化:   0x3CCE0 - 0x3DB1B (3643 bytes)
+//   距离排序/选点:  0x44850 - 0x45255 (2565 bytes)
+//   高级质心检测:   0x459F0 - 0x461D1 (2017 bytes)
+//   圆心拟合主函数: 0x58240 - 0x5A54C (8972 bytes, 115 FP ops)
+//
 // 图像类型:
 //   Image<uint8_t, 1>  → 8位灰度图
 //   Image<uint16_t, 3> → 16位灰度图（GRAY16）
 //
-// 分割算法: 种子扩展 (seed expansion) blob检测 + 加权质心计算
+// 分割算法: 种子扩展 (seed expansion) blob检测 + 加权质心计算 + 圆心拟合
+//
+// 详细文档: analysis_disassembly_image_segmentation_circle_fitting.md
+// 圆心拟合: CircleFitting.h
 // ===========================================================================
 
 #pragma once
 
 #include <ftkInterface.h>
 #include <cstdint>
+#include <cmath>
+#include <cstring>
 #include <vector>
+#include <map>
+#include <algorithm>
 
 namespace measurement {
 namespace segmenter {
@@ -161,9 +175,30 @@ private:
     /// DLL选项: "Pixel Weight for Centroid", "Advanced centroid detection"
     ///
     /// 标准质心: center = Σ(pos * intensity) / Σ(intensity)
-    /// 高级质心: 使用高斯拟合或更复杂的插值
+    /// 高级质心: 使用圆心拟合 (见 CircleFitting.h)
     BlobResult computeCentroid(const ImageT& image,
                                const std::vector<Line<PixelT, IndexT>>& lines);
+
+    /// 高级质心检测 — 圆心拟合
+    /// DLL: 0x459F0-0x461D1 (2017 bytes) + 0x58240-0x5A54C (8972 bytes)
+    ///
+    /// 当 m_advancedCentroid = true 时使用此方法:
+    /// 1. 提取blob边缘像素
+    /// 2. 使用Givens旋转迭代法拟合圆
+    /// 3. 圆心坐标作为亚像素中心
+    ///
+    /// 此方法精度远高于标准加权质心(可达1e-7级收敛)，
+    /// 但计算量更大(最多49次迭代)
+    BlobResult computeAdvancedCentroid(const ImageT& image,
+                                       const std::vector<Line<PixelT, IndexT>>& lines);
+
+    /// 提取blob的边缘像素（用于圆心拟合的输入）
+    /// 边缘像素 = 在blob内但有至少一个4-连通邻居不在blob内的像素
+    void extractEdgePixels(const ImageT& image,
+                           const std::vector<Line<PixelT, IndexT>>& lines,
+                           std::vector<double>& edgeX,
+                           std::vector<double>& edgeY,
+                           std::vector<double>& edgeWeights);
 
     /// 检查blob是否触碰图像边缘
     /// 对应 ftkStatus 中的 RightEdge, BottomEdge, LeftEdge, TopEdge 位
@@ -215,7 +250,19 @@ int32_t SegmenterV21<ImageT, PixelT, IndexT>::segment(
             seedExpansion(image, x, y, threshold, lines, visited);
 
             // 计算blob属性
-            BlobResult blob = computeCentroid(image, lines);
+            BlobResult blob;
+            if (this->m_advancedCentroid)
+            {
+                // 高级质心: 使用圆心拟合算法
+                // DLL: 当 "Advanced centroid detection" 启用时调用
+                // 0x459F0-0x461D1 → 0x58240-0x5A54C
+                blob = computeAdvancedCentroid(image, lines);
+            }
+            else
+            {
+                // 标准质心: 加权质心计算
+                blob = computeCentroid(image, lines);
+            }
 
             // 面积过滤
             if (blob.area < this->m_blobMinSurface ||
@@ -371,6 +418,208 @@ BlobResult SegmenterV21<ImageT, PixelT, IndexT>::computeCentroid(
 
     return blob;
 }
+
+template <typename ImageT, typename PixelT, typename IndexT>
+void SegmenterV21<ImageT, PixelT, IndexT>::checkEdgeStatus(
+
+// ===========================================================================
+// 高级质心检测 — 圆心拟合
+// DLL: 0x459F0-0x461D1 (预处理) + 0x58240-0x5A54C (核心拟合)
+// ===========================================================================
+
+template <typename ImageT, typename PixelT, typename IndexT>
+void SegmenterV21<ImageT, PixelT, IndexT>::extractEdgePixels(
+    const ImageT& image,
+    const std::vector<Line<PixelT, IndexT>>& lines,
+    std::vector<double>& edgeX,
+    std::vector<double>& edgeY,
+    std::vector<double>& edgeWeights)
+{
+    // 构建像素集合用于快速查找
+    // DLL中使用行程编码直接判断
+    std::map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> rowSpans;
+    for (const auto& line : lines)
+    {
+        rowSpans[line.row].push_back({line.colStart, line.colEnd});
+    }
+
+    auto isInBlob = [&](uint32_t x, uint32_t y) -> bool {
+        auto it = rowSpans.find(y);
+        if (it == rowSpans.end()) return false;
+        for (const auto& span : it->second)
+        {
+            if (x >= span.first && x <= span.second) return true;
+        }
+        return false;
+    };
+
+    // 提取边缘像素: 在blob内但有邻居不在blob内
+    for (const auto& line : lines)
+    {
+        uint32_t y = line.row;
+        for (uint32_t x = line.colStart; x <= line.colEnd; ++x)
+        {
+            bool isBorder = false;
+            // 4-连通邻域检查
+            if (x == line.colStart || x == line.colEnd)
+                isBorder = true;
+            else if (!isInBlob(x, y - 1) || !isInBlob(x, y + 1))
+                isBorder = true;
+
+            if (isBorder)
+            {
+                edgeX.push_back(static_cast<double>(x));
+                edgeY.push_back(static_cast<double>(y));
+
+                double weight = 1.0;
+                if (this->m_usePixelWeight)
+                {
+                    weight = static_cast<double>(image.pixel(x, y));
+                }
+                edgeWeights.push_back(weight);
+            }
+        }
+    }
+}
+
+template <typename ImageT, typename PixelT, typename IndexT>
+BlobResult SegmenterV21<ImageT, PixelT, IndexT>::computeAdvancedCentroid(
+    const ImageT& image,
+    const std::vector<Line<PixelT, IndexT>>& lines)
+{
+    // 首先计算标准质心作为后备
+    BlobResult blob = computeCentroid(image, lines);
+
+    // 如果点数太少，直接返回标准质心
+    if (blob.area < 10)
+        return blob;
+
+    // 提取边缘像素
+    std::vector<double> edgeX, edgeY, edgeWeights;
+    extractEdgePixels(image, lines, edgeX, edgeY, edgeWeights);
+
+    if (edgeX.size() < 3)
+        return blob;
+
+    // === 核心: Givens旋转迭代圆拟合 ===
+    // DLL: 0x58240-0x5A54C
+    // 详细算法见 CircleFitting.h
+
+    const size_t N = edgeX.size();
+    const double kEpsilon = 1e-7;         // DLL: RVA 0x248EC8
+    const int kMaxIter = 49;              // DLL: cmp rdi, 0x31
+
+    // 初始估计: 使用加权质心作为初始圆心
+    double cx = blob.centerX;
+    double cy = blob.centerY;
+    double r = 0.0;
+
+    // 初始半径 = 平均到圆心距离
+    for (size_t i = 0; i < N; ++i)
+    {
+        double dx = edgeX[i] - cx;
+        double dy = edgeY[i] - cy;
+        r += std::sqrt(dx * dx + dy * dy);
+    }
+    r /= static_cast<double>(N);
+
+    // Givens旋转QR迭代
+    // DLL: 外层循环 0x59C90-0x5A2AA
+    double R[3][4];
+
+    for (int iter = 0; iter < kMaxIter; ++iter)
+    {
+        std::memset(R, 0, sizeof(R));
+
+        for (size_t i = 0; i < N; ++i)
+        {
+            double dx = edgeX[i] - cx;
+            double dy = edgeY[i] - cy;
+            double di = std::sqrt(dx * dx + dy * dy);
+            if (di < kEpsilon) di = kEpsilon;
+
+            double w = this->m_usePixelWeight ? std::sqrt(edgeWeights[i]) : 1.0;
+
+            // 加权雅可比行: [w*∂f/∂cx, w*∂f/∂cy, w*∂f/∂r, w*residual]
+            double row[4] = {
+                w * (dx / di),      // ∂f/∂cx
+                w * (dy / di),      // ∂f/∂cy
+                w * (-1.0),         // ∂f/∂r
+                w * (di - r)        // 残差
+            };
+
+            // Givens消元: 将row合并到R的上三角中
+            // DLL: 0x59E22-0x59E8E
+            for (int j = 0; j < 3; ++j)
+            {
+                if (std::fabs(row[j]) < kEpsilon) continue;
+
+                if (std::fabs(R[j][j]) < kEpsilon)
+                {
+                    for (int k = j; k < 4; ++k) R[j][k] = row[k];
+                    break;
+                }
+
+                // 计算Givens旋转
+                // DLL: 0x59DF6-0x59E12
+                double a = R[j][j], b = row[j];
+                double absA = std::fabs(a), absB = std::fabs(b);
+                double norm;
+                if (absA > absB)
+                    norm = absA * std::sqrt(1.0 + (b / a) * (b / a));
+                else
+                    norm = absB * std::sqrt(1.0 + (a / b) * (a / b));
+
+                double invNorm = 1.0 / norm;   // DLL: divsd from 0x248EF0
+                double gc = a * invNorm;        // cos(θ)
+                double gs = -b * invNorm;       // sin(θ), DLL: xorps with -0.0
+
+                // 应用旋转到R[j]和row
+                // DLL: 0x59E43-0x59E71
+                for (int k = j; k < 4; ++k)
+                {
+                    double t1 = gc * R[j][k] + gs * row[k];
+                    double t2 = gc * row[k] - gs * R[j][k];
+                    R[j][k] = t1;
+                    row[k] = t2;
+                }
+            }
+        }
+
+        // 回代求解增量
+        // DLL: 0x5A139-0x5A215
+        double delta[3] = {0.0, 0.0, 0.0};
+        for (int j = 2; j >= 0; --j)
+        {
+            if (std::fabs(R[j][j]) < kEpsilon) continue;
+            double sum = R[j][3];
+            for (int k = j + 1; k < 3; ++k)
+                sum -= R[j][k] * delta[k];
+            delta[j] = sum / R[j][j];
+        }
+
+        // 更新参数
+        cx -= delta[0];
+        cy -= delta[1];
+        r -= delta[2];
+
+        // 收敛检查
+        // DLL: ucomisd with 0x248EC8 = 1e-7
+        double change = std::fabs(delta[0]) + std::fabs(delta[1]) + std::fabs(delta[2]);
+        if (change < kEpsilon)
+            break;
+    }
+
+    // 更新blob结果为拟合的圆心
+    blob.centerX = static_cast<float>(cx);
+    blob.centerY = static_cast<float>(cy);
+
+    return blob;
+}
+
+// ===========================================================================
+// checkEdgeStatus 实现
+// ===========================================================================
 
 template <typename ImageT, typename PixelT, typename IndexT>
 void SegmenterV21<ImageT, PixelT, IndexT>::checkEdgeStatus(
