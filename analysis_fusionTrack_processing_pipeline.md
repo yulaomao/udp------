@@ -169,7 +169,7 @@ outFrame->markersStat = ftkQueryStatus::QS_REPROCESS;
 - 帧大小的微小波动说明内容是变长的 ROI 编码数据，与每帧检测到的 blob 数量和大小有关
 
 对比一下，如果传输的是处理结果：
-- 一个 `ftkMarker` 结构体仅 84 字节（4+4+4+4+24+36+12+4 = 92 字节带对齐）
+- 一个 `ftkMarker` 结构体仅约 92 字节（status 4 + id 4 + geometryId 4 + presenceMask 4 + fiducialCorresp 24 + rotation 36 + translation 12 + registrationError 4 = 92 字节）
 - 一个 `ftk3DFiducial` 结构体仅 40 字节
 - 三个小球的工具识别结果总共不超过 300 字节
 
@@ -350,7 +350,7 @@ if (DEV_SPRYTRACK_180 == device.Type || DEV_SPRYTRACK_300 == device.Type) {
 ### 7.2 帧头部分析
 
 内层帧头（80 字节）包含的字段仅有：
-- 时间戳（magic/unix timestamp, device_timestamp_us）
+- 时间戳（magic/unix timestamp, device_timestamp_us：设备自启动以来的运行时间，单位微秒）
 - 帧计数器
 - 传感器标志（左/右目标识）
 - 与传感器配置相关的固定参数
