@@ -24,6 +24,13 @@ import sys
 import os
 from collections import defaultdict
 
+# =============================================================================
+# 设备网络常量
+# =============================================================================
+
+CAMERA_IP = '172.17.1.7'        # fusionTrack 相机默认 IP 地址
+CAMERA_PORT = 3509              # fusionTrack 相机默认 UDP 端口
+
 
 def read_pcapng_udp(filename):
     """读取 pcapng 文件，提取 UDP 数据包（保留时间顺序）"""
@@ -149,18 +156,15 @@ def main():
     print("UDP 包总数: %d" % len(packets))
 
     # 分类数据包
-    camera_ip = '172.17.1.7'
-    camera_port = 3509
-
     pc_to_cam = []
     cam_to_pc = []
     broadcast = []
     other = []
 
     for p in packets:
-        if p['dst_ip'] == camera_ip and p['dst_port'] == camera_port:
+        if p['dst_ip'] == CAMERA_IP and p['dst_port'] == CAMERA_PORT:
             pc_to_cam.append(p)
-        elif p['src_ip'] == camera_ip and p['src_port'] == camera_port:
+        elif p['src_ip'] == CAMERA_IP and p['src_port'] == CAMERA_PORT:
             cam_to_pc.append(p)
         elif p['dst_ip'] in ('255.255.255.255', '172.17.1.255'):
             broadcast.append(p)
@@ -296,9 +300,9 @@ def main():
     # Find first 200 relevant packets in order
     relevant = []
     for p in packets[:500]:
-        if p['dst_ip'] == camera_ip and p['dst_port'] == camera_port:
+        if p['dst_ip'] == CAMERA_IP and p['dst_port'] == CAMERA_PORT:
             relevant.append(('PC->CAM', p))
-        elif p['src_ip'] == camera_ip and p['src_port'] == camera_port:
+        elif p['src_ip'] == CAMERA_IP and p['src_port'] == CAMERA_PORT:
             relevant.append(('CAM->PC', p))
         elif p['dst_ip'] in ('255.255.255.255', '172.17.1.255'):
             relevant.append(('BCAST', p))

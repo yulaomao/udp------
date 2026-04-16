@@ -49,6 +49,21 @@ from collections import defaultdict, Counter
 import numpy as np
 from scipy import ndimage
 
+# =============================================================================
+# 设备网络常量
+# =============================================================================
+
+CAMERA_IP = '172.17.1.7'        # fusionTrack 相机默认 IP 地址
+CAMERA_PORT = 3509              # fusionTrack 相机默认 UDP 端口
+STREAM_TAG_LEFT = 0x1003        # 左目相机数据流标识
+STREAM_TAG_RIGHT = 0x1004       # 右目相机数据流标识
+SENSOR_FLAG_LEFT = 0x00         # 左目传感器标志 (内层帧头 byte[20])
+SENSOR_FLAG_RIGHT = 0xC0        # 右目传感器标志 (内层帧头 byte[20])
+INNER_HEADER_SIZE = 80          # 内层帧头部大小 (字节)
+ROI_RECORD_SIZE = 16            # ROI 记录固定大小 (字节)
+ROI_BACKGROUND = 0x80           # ROI 背景填充值
+ROI_PADDING = 0x00              # ROI 尾部填充值
+
 
 # =============================================================================
 # Layer 1: UDP 分片协议 - 24 字节私有头部
@@ -407,15 +422,13 @@ def decode_pcapng(filename, threshold=80, min_area=100, last_n=None, all_blobs=F
     print("  UDP 包总数: %d" % len(packets))
 
     # 筛选相机->电脑的数据包
-    camera_ip = '172.17.1.7'
-    camera_port = 3509
     cam_packets = [p for p in packets
-                   if p['src_ip'] == camera_ip and p['src_port'] == camera_port]
+                   if p['src_ip'] == CAMERA_IP and p['src_port'] == CAMERA_PORT]
     print("  相机数据包: %d" % len(cam_packets))
 
     # 也记录控制包 (电脑->相机)
     ctrl_packets = [p for p in packets
-                    if p['dst_ip'] == camera_ip and p['dst_port'] == camera_port]
+                    if p['dst_ip'] == CAMERA_IP and p['dst_port'] == CAMERA_PORT]
     print("  控制命令包: %d" % len(ctrl_packets))
 
     # 重组帧
@@ -438,9 +451,9 @@ def decode_pcapng(filename, threshold=80, min_area=100, last_n=None, all_blobs=F
 
     # 找出两路流共有的 frame_token
     all_tags = sorted(stream_frames.keys())
-    if 0x1003 in stream_frames and 0x1004 in stream_frames:
-        left_tokens = {ft: d for ft, d in stream_frames[0x1003]}
-        right_tokens = {ft: d for ft, d in stream_frames[0x1004]}
+    if STREAM_TAG_LEFT in stream_frames and STREAM_TAG_RIGHT in stream_frames:
+        left_tokens = {ft: d for ft, d in stream_frames[STREAM_TAG_LEFT]}
+        right_tokens = {ft: d for ft, d in stream_frames[STREAM_TAG_RIGHT]}
         common_tokens = sorted(set(left_tokens.keys()) & set(right_tokens.keys()))
     else:
         left_tokens = {}
