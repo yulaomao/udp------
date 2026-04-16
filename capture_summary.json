@@ -1,0 +1,722 @@
+{
+  "file": "stylus.pcapng",
+  "total_packets": 9453,
+  "udp_packets": 9452,
+  "non_udp_packets": 1,
+  "non_ip_packets": 0,
+  "top_endpoints": [
+    {
+      "ip": "172.17.1.7",
+      "port": 3509,
+      "packet_mentions": 9446
+    },
+    {
+      "ip": "172.17.1.56",
+      "port": 50316,
+      "packet_mentions": 9446
+    },
+    {
+      "ip": "172.17.1.56",
+      "port": 53850,
+      "packet_mentions": 6
+    },
+    {
+      "ip": "172.17.1.255",
+      "port": 63630,
+      "packet_mentions": 3
+    },
+    {
+      "ip": "255.255.255.255",
+      "port": 63630,
+      "packet_mentions": 3
+    }
+  ],
+  "top_prefixes": [
+    {
+      "prefix": "0410d602",
+      "count": 4196
+    },
+    {
+      "prefix": "0310d602",
+      "count": 3150
+    },
+    {
+      "prefix": "0410d401",
+      "count": 384
+    },
+    {
+      "prefix": "03102e02",
+      "count": 366
+    },
+    {
+      "prefix": "03103602",
+      "count": 330
+    },
+    {
+      "prefix": "0410cc01",
+      "count": 266
+    },
+    {
+      "prefix": "0410dc01",
+      "count": 227
+    },
+    {
+      "prefix": "03102602",
+      "count": 175
+    },
+    {
+      "prefix": "03103e02",
+      "count": 116
+    },
+    {
+      "prefix": "0410e401",
+      "count": 78
+    },
+    {
+      "prefix": "0410c401",
+      "count": 69
+    },
+    {
+      "prefix": "03104602",
+      "count": 34
+    }
+  ],
+  "vendor_header_inference": {
+    "header_length": 24,
+    "packet_words_times_two_matches_payload_length": true,
+    "streams": [
+      {
+        "stream_tag": 4099,
+        "stream_name": "0x1003",
+        "packet_count": 4200,
+        "frame_count": 1050,
+        "complete_frames": 1050,
+        "frame_size_summary": {
+          "min": 5344,
+          "max": 5440,
+          "mean": 5383.21,
+          "median": 5376.0,
+          "top_lengths": [
+            {
+              "length": 5376,
+              "count": 1464
+            },
+            {
+              "length": 5392,
+              "count": 1320
+            },
+            {
+              "length": 5360,
+              "count": 700
+            },
+            {
+              "length": 5408,
+              "count": 464
+            },
+            {
+              "length": 5424,
+              "count": 136
+            },
+            {
+              "length": 5344,
+              "count": 88
+            },
+            {
+              "length": 5440,
+              "count": 28
+            }
+          ],
+          "stdev": 17.54
+        },
+        "packet_sequence_range": {
+          "min": 4953249,
+          "max": 4962693
+        },
+        "sample_headers": [
+          {
+            "packet_sequence": 4953249,
+            "frame_token": 550645,
+            "frame_size": 5392,
+            "payload_offset": 0,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953250,
+            "frame_token": 550645,
+            "frame_size": 5392,
+            "payload_offset": 1428,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953251,
+            "frame_token": 550645,
+            "frame_size": 5392,
+            "payload_offset": 2856,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953252,
+            "frame_token": 550645,
+            "frame_size": 5392,
+            "payload_offset": 4284,
+            "packet_words": 566
+          },
+          {
+            "packet_sequence": 4953258,
+            "frame_token": 550646,
+            "frame_size": 5392,
+            "payload_offset": 0,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953259,
+            "frame_token": 550646,
+            "frame_size": 5392,
+            "payload_offset": 1428,
+            "packet_words": 726
+          }
+        ],
+        "sample_frames": [
+          {
+            "stream_tag": 4099,
+            "frame_token": 550645,
+            "frame_size": 5392,
+            "packet_count": 4,
+            "covered_bytes": 5392,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          },
+          {
+            "stream_tag": 4099,
+            "frame_token": 550646,
+            "frame_size": 5392,
+            "packet_count": 4,
+            "covered_bytes": 5392,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          },
+          {
+            "stream_tag": 4099,
+            "frame_token": 550647,
+            "frame_size": 5376,
+            "packet_count": 4,
+            "covered_bytes": 5376,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          },
+          {
+            "stream_tag": 4099,
+            "frame_token": 550648,
+            "frame_size": 5376,
+            "packet_count": 4,
+            "covered_bytes": 5376,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          },
+          {
+            "stream_tag": 4099,
+            "frame_token": 550649,
+            "frame_size": 5392,
+            "packet_count": 4,
+            "covered_bytes": 5392,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          },
+          {
+            "stream_tag": 4099,
+            "frame_token": 550650,
+            "frame_size": 5376,
+            "packet_count": 4,
+            "covered_bytes": 5376,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284
+            ]
+          }
+        ]
+      },
+      {
+        "stream_tag": 4100,
+        "stream_name": "0x1004",
+        "packet_count": 5245,
+        "frame_count": 1049,
+        "complete_frames": 1049,
+        "frame_size_summary": {
+          "min": 6592,
+          "max": 6704,
+          "mean": 6624.95,
+          "median": 6624,
+          "top_lengths": [
+            {
+              "length": 6624,
+              "count": 1920
+            },
+            {
+              "length": 6608,
+              "count": 1330
+            },
+            {
+              "length": 6640,
+              "count": 1135
+            },
+            {
+              "length": 6656,
+              "count": 390
+            },
+            {
+              "length": 6592,
+              "count": 345
+            },
+            {
+              "length": 6672,
+              "count": 95
+            },
+            {
+              "length": 6688,
+              "count": 20
+            },
+            {
+              "length": 6704,
+              "count": 10
+            }
+          ],
+          "stdev": 18.23
+        },
+        "packet_sequence_range": {
+          "min": 4953253,
+          "max": 4962689
+        },
+        "sample_headers": [
+          {
+            "packet_sequence": 4953253,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "payload_offset": 0,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953254,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "payload_offset": 1428,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953255,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "payload_offset": 2856,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953256,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "payload_offset": 4284,
+            "packet_words": 726
+          },
+          {
+            "packet_sequence": 4953257,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "payload_offset": 5712,
+            "packet_words": 476
+          },
+          {
+            "packet_sequence": 4953262,
+            "frame_token": 550646,
+            "frame_size": 6688,
+            "payload_offset": 0,
+            "packet_words": 726
+          }
+        ],
+        "sample_frames": [
+          {
+            "stream_tag": 4100,
+            "frame_token": 550645,
+            "frame_size": 6640,
+            "packet_count": 5,
+            "covered_bytes": 6640,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          },
+          {
+            "stream_tag": 4100,
+            "frame_token": 550646,
+            "frame_size": 6688,
+            "packet_count": 5,
+            "covered_bytes": 6688,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          },
+          {
+            "stream_tag": 4100,
+            "frame_token": 550647,
+            "frame_size": 6656,
+            "packet_count": 5,
+            "covered_bytes": 6656,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          },
+          {
+            "stream_tag": 4100,
+            "frame_token": 550648,
+            "frame_size": 6608,
+            "packet_count": 5,
+            "covered_bytes": 6608,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          },
+          {
+            "stream_tag": 4100,
+            "frame_token": 550649,
+            "frame_size": 6640,
+            "packet_count": 5,
+            "covered_bytes": 6640,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          },
+          {
+            "stream_tag": 4100,
+            "frame_token": 550650,
+            "frame_size": 6624,
+            "packet_count": 5,
+            "covered_bytes": 6624,
+            "complete": true,
+            "offset_samples": [
+              0,
+              1428,
+              2856,
+              4284,
+              5712
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "flows": [
+    {
+      "direction": {
+        "src_ip": "172.17.1.7",
+        "src_port": 3509,
+        "dst_ip": "172.17.1.56",
+        "dst_port": 50316
+      },
+      "packet_count": 9445,
+      "payload_bytes": 12828616,
+      "duration_seconds": 3.131761,
+      "length_summary": {
+        "min": 904,
+        "max": 1452,
+        "mean": 1358.24,
+        "median": 1452,
+        "top_lengths": [
+          {
+            "length": 1452,
+            "count": 7346
+          },
+          {
+            "length": 936,
+            "count": 384
+          },
+          {
+            "length": 1116,
+            "count": 366
+          },
+          {
+            "length": 1132,
+            "count": 330
+          },
+          {
+            "length": 920,
+            "count": 266
+          },
+          {
+            "length": 952,
+            "count": 227
+          },
+          {
+            "length": 1100,
+            "count": 175
+          },
+          {
+            "length": 1148,
+            "count": 116
+          },
+          {
+            "length": 968,
+            "count": 78
+          },
+          {
+            "length": 904,
+            "count": 69
+          }
+        ],
+        "stdev": 181.0
+      },
+      "common_prefixes": [
+        {
+          "prefix": "0410d602",
+          "count": 4196
+        },
+        {
+          "prefix": "0310d602",
+          "count": 3150
+        },
+        {
+          "prefix": "0410d401",
+          "count": 384
+        },
+        {
+          "prefix": "03102e02",
+          "count": 366
+        },
+        {
+          "prefix": "03103602",
+          "count": 330
+        },
+        {
+          "prefix": "0410cc01",
+          "count": 266
+        },
+        {
+          "prefix": "0410dc01",
+          "count": 227
+        },
+        {
+          "prefix": "03102602",
+          "count": 175
+        },
+        {
+          "prefix": "03103e02",
+          "count": 116
+        },
+        {
+          "prefix": "0410e401",
+          "count": 78
+        }
+      ],
+      "samples": [
+        {
+          "length": 1452,
+          "hex": "0310d602a1944b0000000000f5660800101500000000000019184466000000005f6f66e200000000f168130000000000",
+          "ascii": "......K......f............Df...._of......h......"
+        },
+        {
+          "length": 1452,
+          "hex": "0310d602a2944b0000000000f5660800101500009405000000000000000000000000000080806a9c9e9e9a1280808080",
+          "ascii": "......K......f........................j........."
+        },
+        {
+          "length": 1452,
+          "hex": "0310d602a3944b0000000000f566080010150000280b0000808080808000000062a1b8d1e7f9ffffffffffffe7cbae10",
+          "ascii": "......K......f......(...........b..............."
+        },
+        {
+          "length": 1132,
+          "hex": "03103602a4944b0000000000f566080010150000bc100000dcb29a178080808080808080808000000000000080808080",
+          "ascii": "..6...K......f.................................."
+        },
+        {
+          "length": 1452,
+          "hex": "0410d602a5944b0000000000f5660800f01900000000000019184466000000005f6f66e200000000f1681300c0000000",
+          "ascii": "......K......f............Df...._of......h......"
+        },
+        {
+          "length": 1452,
+          "hex": "0410d602a6944b0000000000f5660800f019000094050000d9e3e6e4ded6c8b6a13180808080806badb4b3b2aa990f80",
+          "ascii": "......K......f...................1.....k........"
+        }
+      ]
+    },
+    {
+      "direction": {
+        "src_ip": "172.17.1.56",
+        "src_port": 53850,
+        "dst_ip": "172.17.1.255",
+        "dst_port": 63630
+      },
+      "packet_count": 3,
+      "payload_bytes": 12,
+      "duration_seconds": 2.278695,
+      "length_summary": {
+        "min": 4,
+        "max": 4,
+        "mean": 4.0,
+        "median": 4,
+        "top_lengths": [
+          {
+            "length": 4,
+            "count": 3
+          }
+        ],
+        "stdev": 0.0
+      },
+      "common_prefixes": [
+        {
+          "prefix": "303a3300",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        },
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        },
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        }
+      ]
+    },
+    {
+      "direction": {
+        "src_ip": "172.17.1.56",
+        "src_port": 53850,
+        "dst_ip": "255.255.255.255",
+        "dst_port": 63630
+      },
+      "packet_count": 3,
+      "payload_bytes": 12,
+      "duration_seconds": 2.277042,
+      "length_summary": {
+        "min": 4,
+        "max": 4,
+        "mean": 4.0,
+        "median": 4,
+        "top_lengths": [
+          {
+            "length": 4,
+            "count": 3
+          }
+        ],
+        "stdev": 0.0
+      },
+      "common_prefixes": [
+        {
+          "prefix": "303a3300",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        },
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        },
+        {
+          "length": 4,
+          "hex": "303a3300",
+          "ascii": "0:3."
+        }
+      ]
+    },
+    {
+      "direction": {
+        "src_ip": "172.17.1.56",
+        "src_port": 50316,
+        "dst_ip": "172.17.1.7",
+        "dst_port": 3509
+      },
+      "packet_count": 1,
+      "payload_bytes": 12,
+      "duration_seconds": 0.0,
+      "length_summary": {
+        "min": 12,
+        "max": 12,
+        "mean": 12.0,
+        "median": 12,
+        "top_lengths": [
+          {
+            "length": 12,
+            "count": 1
+          }
+        ]
+      },
+      "common_prefixes": [
+        {
+          "prefix": "07000600",
+          "count": 1
+        }
+      ],
+      "samples": [
+        {
+          "length": 12,
+          "hex": "070006005d00000000000000",
+          "ascii": "....]......."
+        }
+      ]
+    }
+  ]
+}

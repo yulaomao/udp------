@@ -1,0 +1,29 @@
+This is a demonstration on how to load a geometry from a file and how to get the marker's position and orientation.
+                  [-h/--help] Displays this help and exits.
+              [-c/--config F] JSON config file. Type std::string, default = none
+        [-g/--geom F (F ...)] geometry file(s) to load, default = D:/geometry072.ini
+Copyright (c) Atracsys LLC 2003-2021
+Detected one fTk 500 with serial number 0xf800000e379d1428
+D:/geometry072.ini
+
+閻╁憡婧€瀹告彃鍨垫慨瀣鐎瑰本鍨氶敍宀€骞囬崷銊ュ讲娴犮儵娈㈤弮鑸靛付閸掑墎娴夐張鎭掆偓淇搉
+閸欘垳鏁ら崨鎴掓姢:
+quit - 闁偓閸戣櫣鈻兼惔寤玭pause - 閺嗗倸浠犻柌鍥肠
+resume - 閹垹顦查柌鍥肠
+option - 閺勫墽銇氶崣顖滄暏闁銆?
+set <闁銆嶉崥? <閸? - 鐠佸墽鐤嗛柅澶愩€嶉崐绯猲
+鏉堟挸鍙嗛崨鎴掓姢:
+-301.218,66.043,1777.359
+0.714,0.014,0.700
+-0.700,0.031,0.714
+-0.012,-0.999,0.032
+
+-301.247,66.053,1777.360
+0.714,0.014,0.700
+-0.700,0.031,0.714
+-0.012,-0.999,0.032
+
+-301.224,66.035,1777.394
+0.714,0.014,0.700
+-0.700,0.031,0.714
+-0.012,-0.999,0.032
