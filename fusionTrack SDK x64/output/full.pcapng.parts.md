@@ -1,29 +1,15 @@
-# full.pcapng 分片说明
+# full.pcapng 分卷说明
 
-仓库中保存的是以下 3 个分片文件：
+仓库中保存的是以下 3 个可独立读取和解析的 pcapng 文件：
 
-- full.pcapng.part01
-- full.pcapng.part02
-- full.pcapng.part03
+- full_01.pcapng
+- full_02.pcapng
+- full_03.pcapng
 
-在 PowerShell 中可使用下面的脚本恢复原文件：
+这些文件由仓库根目录的 split_pcapng.py 生成，按抓包记录数均分。
+
+重新生成时可在仓库根目录执行：
 
 ```powershell
-$parts = @(
-  "full.pcapng.part01",
-  "full.pcapng.part02",
-  "full.pcapng.part03"
-)
-
-$output = "full.pcapng"
-$stream = [System.IO.File]::Create($output)
-try {
-  foreach ($part in $parts) {
-    $bytes = [System.IO.File]::ReadAllBytes($part)
-    $stream.Write($bytes, 0, $bytes.Length)
-  }
-}
-finally {
-  $stream.Dispose()
-}
+python split_pcapng.py "fusionTrack SDK x64/output/full.pcapng" --parts 3
 ```
