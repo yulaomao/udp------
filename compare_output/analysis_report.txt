@@ -1,0 +1,106 @@
+============================================================
+ SDK vs Reverse-Engineered Algorithm Comparison Report
+============================================================
+
+Report generated: 2026-04-17 17:40:02
+Pipeline version: StereoAlgoPipeline v2.0.0 (based on stereo_algo v2.0.0 (2026-04, based on verify_reverse_engineered.py))
+Total frames captured: 200
+Total fiducial samples: 2751
+Anomalous samples: 157 (5.7%)
+
+Thresholds used:
+  Position:     0.1 mm
+  Epipolar:     0.0 px
+  Reprojection: 0.1 px
+  Centroid RT:  0.1 px
+  Marker trans: 0.5 mm
+  Marker rot:   0.1 deg
+
+--- Triangulation (3D Position) Difference ---
+  Mean:   0.020870 mm
+  Max:    0.789150 mm
+  StdDev: 0.090801 mm
+  Count:  2751
+
+--- Epipolar Error Difference ---
+  Mean:   0.000032 px
+  Max:    0.000102 px
+  StdDev: 0.000023 px
+
+--- Triangulation Error Difference ---
+  Mean:   0.000161 mm
+  Max:    0.003635 mm
+  StdDev: 0.000498 mm
+
+--- Reprojection Difference ---
+  Left:  mean=0.000038 max=0.000136 std=0.000036 px
+  Right: mean=0.000035 max=0.000126 std=0.000029 px
+
+--- Centroid Round-trip Error (2D->3D->2D vs raw 2D) ---
+  SDK (left):  mean=0.231623 max=2.538797 std=0.442978 px
+  SDK (right): mean=0.229091 max=2.490012 std=0.439679 px
+  Rev (left):  mean=0.231607 max=2.538797 std=0.442986 px
+  Rev (right): mean=0.229076 max=2.490012 std=0.439686 px
+  Count: 2751
+
+--- Fiducial Count Difference (SDK - Rev, per frame) ---
+  Mean diff:   0.49
+  Min diff:    0
+  Max diff:    5
+  Exact match: 145 / 200 frames
+
+--- Batch matchAndTriangulate 3D Position Diff ---
+  Mean:   0.021639 mm
+  Max:    0.789150 mm
+  StdDev: 0.092392 mm
+  Matched pairs: 2652
+
+--- Marker Identification Difference ---
+  Marker count match (frames):   198
+  Marker count mismatch (frames): 2
+  GeomID match (markers):   171
+  GeomID mismatch (markers): 0
+
+--- Marker Transformation Difference ---
+  Translation diff: mean=0.0002 max=0.0006 std=0.0001 mm
+  Rotation diff:    mean=0.0043 max=0.0184 std=0.0056 deg
+  RegError diff:    mean=0.013332 max=0.035404 std=0.002986 mm
+  Matched markers:  171
+
+--- Execution Time Statistics ---
+  Triangulation (per point):
+    SDK:     mean=3.5 max=302.7 us
+    Reverse: mean=3.3 max=495.5 us
+    Speedup: 1.05x
+  Reprojection (per point):
+    SDK:     mean=1.9 max=793.7 us
+    Reverse: mean=1.2 max=1351.2 us
+    Speedup: 1.61x
+  matchAndTriangulate (per frame):
+    Reverse: mean=155.2 max=552.7 us
+  matchMarkers (per frame):
+    Reverse: mean=324.4 max=1755.3 us
+
+  Total time:
+    SDK triangulation:     10 ms
+    Rev triangulation:     9 ms
+    SDK reprojection:      5 ms
+    Rev reprojection:      3 ms
+    Rev matchAndTriang:    31 ms
+    Rev matchMarkers:      65 ms
+
+--- Conclusion ---
+  PASS: Reverse-engineered algorithms match SDK output within thresholds.
+  WARNING: 2 frame(s) with different marker count.
+  157 anomalous samples saved for analysis.
+
+  Output files:
+    anomaly_fiducials_3d.csv        - Anomalous triangulation data
+    anomaly_reprojections.csv       - Anomalous reprojection data
+    anomaly_centroid_roundtrip.csv   - Anomalous centroid round-trip data
+    anomaly_markers.csv             - Anomalous marker data
+    batch_match_diff.csv            - Batch matching count/3D diff
+    frame_summary.csv               - Per-frame comparison summary
+    timing_detail.csv               - Per-point execution time log
+
+============================================================

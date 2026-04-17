@@ -1129,7 +1129,8 @@ def verify_undistortion(cal: Calibration,
 def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
                            raw_right: Dict[int, List[RawDetection]],
                            fiducials_3d: Dict[int, List[Fiducial3D]],
-                           cal: Calibration) -> dict:
+                           cal: Calibration,
+                           image_dir: str = "") -> dict:
     """验证圆心检测一致性 — 直接对比法 (v1.1.0)。
 
     方法: 从原始 PGM 图像执行背景减除加权质心检测，
@@ -1149,69 +1150,72 @@ def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
     print("验证 6：圆心检测（SegmenterV21 — 直接图像对比法 v1.1.0）")
     print("=" * 70)
 
-    data_dir = os.path.dirname(os.path.abspath(__file__))
-    dump_dir = os.path.join(data_dir, "dump_output")
+    # 确定图像目录：优先使用传入的 image_dir，否则从脚本路径推断
+    if image_dir:
+        dump_dir = os.path.abspath(image_dir)
+    else:
+        dump_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dump_output")
 
-    # 辅助函数: 加载 PGM 图像
+    # 辅助函数: 加载 PGM 图像 (P5 格式)
     def load_pgm(path):
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             magic = f.readline().strip()
-            while True:
-                line = f.readline().strip()
-                if not line.startswith(b'#'):
+            if magic != b"P5":
+                raise ValueError(f"不支持的 PGM 格式: {path}")
+            tokens = []
+            while len(tokens) < 3:
+                line = f.readline()
+                if not line:
                     break
-            w, h = map(int, line.split())
-            maxval = int(f.readline().strip())
+                line = line.strip()
+                if not line or line.startswith(b"#"):
+                    continue
+                tokens.extend(line.split())
+            w, h, _ = int(tokens[0]), int(tokens[1]), int(tokens[2])
             data = np.frombuffer(f.read(), dtype=np.uint8)
-            return data[:w * h].reshape((h, w))
+            return data[: w * h].reshape((h, w))
 
-    # 辅助函数: 种子扩展分割 (4-连通)
+    # 辅助函数: 使用 cv2 连通域快速提取 blob，返回已计算好的质心列表
     def segment_blobs(img, threshold=10, min_area=4, max_area=10000, min_aspect=0.3):
-        h, w = img.shape
-        visited = np.zeros((h, w), dtype=bool)
-        blobs = []
-        for y in range(h):
-            for x in range(w):
-                if visited[y, x] or img[y, x] < threshold:
-                    visited[y, x] = True
-                    continue
-                # 洪泛填充
-                pixels = {}
-                stack = [(x, y)]
-                visited[y, x] = True
-                while stack:
-                    cx, cy = stack.pop()
-                    pixels[(cx, cy)] = int(img[cy, cx])
-                    for nx, ny in [(cx-1,cy),(cx+1,cy),(cx,cy-1),(cx,cy+1)]:
-                        if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx] and img[ny, nx] >= threshold:
-                            visited[ny, nx] = True
-                            stack.append((nx, ny))
-                area = len(pixels)
-                if area < min_area or area > max_area:
-                    continue
-                xs = [p[0] for p in pixels]
-                ys = [p[1] for p in pixels]
-                bw = max(xs) - min(xs) + 1
-                bh = max(ys) - min(ys) + 1
-                if bw > 0 and bh > 0 and min(bw, bh) / max(bw, bh) >= min_aspect:
-                    blobs.append(pixels)
-        return blobs
+        import cv2  # type: ignore
 
-    # 辅助函数: 背景减除加权质心 (+0.5 像素中心约定)
-    def bg_subtracted_centroid(pixels, offset=0.5, bg_step=2.0):
-        min_val = min(pixels.values())
-        bg = float(min_val) - bg_step
-        sx = sy = sw = 0.0
-        for (x, y), intens in pixels.items():
-            w = float(intens) - bg
-            if w > 0:
-                sx += (x + offset) * w
-                sy += (y + offset) * w
-                sw += w
-        if sw > 0:
-            return sx / sw, sy / sw
-        n = len(pixels)
-        return sum(x + offset for (x, y) in pixels) / n, sum(y + offset for (x, y) in pixels) / n
+        mask = (img >= threshold).astype(np.uint8)
+        if mask.sum() == 0:
+            return []
+
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
+        blobs = []
+        for label in range(1, num_labels):
+            bx = int(stats[label, cv2.CC_STAT_LEFT])
+            by = int(stats[label, cv2.CC_STAT_TOP])
+            bw = int(stats[label, cv2.CC_STAT_WIDTH])
+            bh = int(stats[label, cv2.CC_STAT_HEIGHT])
+            area = int(stats[label, cv2.CC_STAT_AREA])
+
+            if area < min_area or area > max_area:
+                continue
+            if bw <= 0 or bh <= 0 or min(bw, bh) / max(bw, bh) < min_aspect:
+                continue
+
+            patch_labels = labels[by: by + bh, bx: bx + bw]
+            comp_mask = patch_labels == label
+            ys_loc, xs_loc = np.where(comp_mask)
+            intens = img[by: by + bh, bx: bx + bw][comp_mask].astype(np.float64)
+
+            min_val = float(intens.min())
+            weights = intens - (min_val - 2.0)
+            sw = float(weights.sum())
+            xs_abs = xs_loc.astype(np.float64) + bx + 0.5
+            ys_abs = ys_loc.astype(np.float64) + by + 0.5
+            if sw > 0.0:
+                cx = float(np.dot(xs_abs, weights) / sw)
+                cy = float(np.dot(ys_abs, weights) / sw)
+            else:
+                cx = float(xs_abs.mean())
+                cy = float(ys_abs.mean())
+
+            blobs.append({"pixels_count": area, "center_x": cx, "center_y": cy})
+        return blobs
 
     # ================================================================
     # Part A: 直接质心对比 (逆向检测 vs SDK 原始数据)
@@ -1239,19 +1243,29 @@ def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
             else:
                 right_count_diffs.append(count_diff)
 
-            # 对每个 SDK 检测，找匹配的逆向检测
+            # 按像素数分组，加快一对一匹配
+            blobs_by_pixels: Dict[int, List[int]] = defaultdict(list)
+            for bi, blob in enumerate(blobs):
+                blobs_by_pixels[int(blob["pixels_count"])].append(bi)
+            used_blob_idx: set = set()
+
+            # 对每个 SDK 检测，找最近未使用的同像素数 blob
             for sdk_det in sdk_dets:
                 best_dist = float('inf')
-                for blob in blobs:
-                    if len(blob) != sdk_det.pixels_count:
+                best_idx = None
+                for bi in blobs_by_pixels.get(sdk_det.pixels_count, []):
+                    if bi in used_blob_idx:
                         continue
-                    cx, cy = bg_subtracted_centroid(blob)
-                    dist = math.sqrt((cx - sdk_det.center_x) ** 2 +
-                                     (cy - sdk_det.center_y) ** 2)
+                    blob = blobs[bi]
+                    dist = math.sqrt((blob["center_x"] - sdk_det.center_x) ** 2 +
+                                     (blob["center_y"] - sdk_det.center_y) ** 2)
                     if dist < best_dist:
                         best_dist = dist
+                        best_idx = bi
 
                 if best_dist < 10.0:
+                    if best_idx is not None:
+                        used_blob_idx.add(best_idx)
                     if side == "left":
                         left_centroid_errors.append(best_dist)
                     else:
@@ -1835,7 +1849,7 @@ def main():
         )
         results["undistortion"] = verify_undistortion(cal, reprojections)
         results["circle_centroid"] = verify_circle_centroid(
-            raw_left, raw_right, fiducials_3d, cal
+            raw_left, raw_right, fiducials_3d, cal, image_dir
         )
         results["epipolar_matching"] = verify_epipolar_matching(
             cal, fiducials_3d, raw_left, raw_right

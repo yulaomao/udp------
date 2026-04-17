@@ -1,0 +1,1 @@
+frame_idx,marker_idx,sdk_geomId,rev_geomId,geomId_match,sdk_tx,sdk_ty,sdk_tz,rev_tx,rev_ty,rev_tz,trans_diff_mm,sdk_r00,sdk_r01,sdk_r02,sdk_r10,sdk_r11,sdk_r12,sdk_r20,sdk_r21,sdk_r22,rev_r00,rev_r01,rev_r02,rev_r10,rev_r11,rev_r12,rev_r20,rev_r21,rev_r22,rot_diff_deg,sdk_regErr_mm,rev_regErr_mm,regErr_diff_mm,sdk_presenceMask,rev_presenceMask
