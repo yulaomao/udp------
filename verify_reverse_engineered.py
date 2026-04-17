@@ -1387,6 +1387,293 @@ def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
     }
 
 
+def epipolar_match_and_triangulate(
+        cal: Calibration,
+        left_dets: List[RawDetection],
+        right_dets: List[RawDetection],
+        epipolar_max_distance: float = 5.0,
+) -> List[dict]:
+    """完整极线匹配管线 — 还原 DLL Match2D3D 逻辑。
+
+    SDK 实际行为 (从 dump 数据分析):
+      - 允许一对多匹配 (一个左图点可匹配多个右图点)
+      - 对每个左图点, 所有极线距离 < threshold 的右图点都被接受
+      - 双向验证: 反向也检查右→左极线距离 < threshold
+      - probability = 1/n (n = 该左图点的候选右图点数)
+
+    返回匹配结果列表。
+    """
+    F = compute_fundamental_matrix(cal)
+    F_transpose = F.T
+    R = rodrigues_to_rotation_matrix(cal.rotation)
+    t = cal.translation
+    Rt = R.T
+
+    # 预计算所有检测点的归一化坐标
+    left_norms = []
+    for det in left_dets:
+        lx, ly = undistort_point(det.center_x, det.center_y,
+                                 cal.left_focal, cal.left_center,
+                                 cal.left_distortion, cal.left_skew)
+        left_norms.append((lx, ly))
+
+    right_norms = []
+    for det in right_dets:
+        rx, ry = undistort_point(det.center_x, det.center_y,
+                                 cal.right_focal, cal.right_center,
+                                 cal.right_distortion, cal.right_skew)
+        right_norms.append((rx, ry))
+
+    # 预计算理想像素坐标 (无畸变)
+    def left_ideal_pixel(lx, ly):
+        return np.array([
+            cal.left_focal[0] * lx + cal.left_skew * cal.left_focal[0] * ly + cal.left_center[0],
+            cal.left_focal[1] * ly + cal.left_center[1],
+            1.0,
+        ])
+
+    def right_ideal_pixel(rx, ry):
+        return np.array([
+            cal.right_focal[0] * rx + cal.right_skew * cal.right_focal[0] * ry + cal.right_center[0],
+            cal.right_focal[1] * ry + cal.right_center[1],
+            1.0,
+        ])
+
+    def line_distance(F_matrix, src_ideal, tgt_ideal):
+        """计算极线距离 (absolute)."""
+        line = F_matrix @ src_ideal
+        norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
+        if norm < 1e-12:
+            return float('inf')
+        return abs((line[0] * tgt_ideal[0] + line[1] * tgt_ideal[1] + line[2]) / norm)
+
+    def signed_line_distance(F_matrix, src_ideal, tgt_ideal):
+        """计算极线距离 (signed, 用于 epipolar error)."""
+        line = F_matrix @ src_ideal
+        norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
+        if norm < 1e-12:
+            return 0.0
+        return (line[0] * tgt_ideal[0] + line[1] * tgt_ideal[1] + line[2]) / norm
+
+    results = []
+
+    # 对每个左图点, 找所有右图候选
+    for li, (lx, ly) in enumerate(left_norms):
+        l_ideal = left_ideal_pixel(lx, ly)
+        candidates = []
+
+        for ri, (rx, ry) in enumerate(right_norms):
+            r_ideal = right_ideal_pixel(rx, ry)
+
+            # 前向: 左→右极线距离
+            fwd_dist = line_distance(F, l_ideal, r_ideal)
+            if fwd_dist >= epipolar_max_distance:
+                continue
+
+            # 反向验证: 右→左极线距离也要在阈值内
+            rev_dist = line_distance(F_transpose, r_ideal, l_ideal)
+            if rev_dist >= epipolar_max_distance:
+                continue
+
+            candidates.append((ri, fwd_dist))
+
+        if not candidates:
+            continue
+
+        n_candidates = len(candidates)
+        probability = 1.0 / n_candidates
+
+        # 输出所有候选 (SDK 的行为: 每个候选都产生一个 fiducial)
+        for ri, fwd_dist in candidates:
+            rx, ry = right_norms[ri]
+
+            # 三角化
+            left_origin = np.array([0.0, 0.0, 0.0])
+            left_dir = np.array([lx, ly, 1.0])
+            left_dir /= np.linalg.norm(left_dir)
+
+            right_origin = Rt @ (-t)
+            right_dir_cam = np.array([rx, ry, 1.0])
+            right_dir = Rt @ right_dir_cam
+            right_dir /= np.linalg.norm(right_dir)
+
+            point_3d, tri_err = triangulate_midpoint(left_origin, left_dir,
+                                                      right_origin, right_dir)
+
+            # float32 量化 (匹配 SDK)
+            point_3d = point_3d.astype(np.float32).astype(np.float64)
+            tri_err = float(np.float32(tri_err))
+
+            # 极线误差 (signed)
+            l_ideal = left_ideal_pixel(lx, ly)
+            r_ideal = right_ideal_pixel(rx, ry)
+            epi_err = signed_line_distance(F, l_ideal, r_ideal)
+            epi_err = float(np.float32(epi_err))
+
+            results.append({
+                'left_idx': left_dets[li].detection_idx,
+                'right_idx': right_dets[ri].detection_idx,
+                'pos_3d': point_3d,
+                'epipolar_error': epi_err,
+                'triangulation_error': tri_err,
+                'probability': probability,
+                'fwd_distance': fwd_dist,
+                'fwd_candidates': n_candidates,
+                'rev_candidates': n_candidates,
+            })
+
+    return results
+
+
+def verify_epipolar_matching(cal: Calibration,
+                             fiducials_3d: Dict[int, List[Fiducial3D]],
+                             raw_left: Dict[int, List[RawDetection]],
+                             raw_right: Dict[int, List[RawDetection]]) -> dict:
+    """验证极线匹配 — 使用圆心提取结果执行完整匹配管线，与 SDK 结果对比。
+
+    实现 DLL Match2D3D 的三个关键步骤:
+      1. 阈值筛选 (epipolarMaxDistance)
+      2. 最优候选选择 (距离最小)
+      3. 双向交叉验证 (左→右 + 右→左)
+
+    对比指标:
+      - 匹配对一致性 (left_idx, right_idx 是否与 SDK 相同)
+      - 3D 坐标差异
+      - 极线误差差异
+      - 概率值差异
+    """
+    print("\n" + "=" * 70)
+    print("验证 8：极线匹配（Match2D3D — 阈值+最优+双向交叉验证）")
+    print("=" * 70)
+
+    match_correct = 0
+    match_total = 0
+    pos_errors = []
+    epi_errors = []
+    tri_errors = []
+    prob_diffs = []
+    sdk_only = 0
+    our_only = 0
+    match_wrong_pair = 0
+
+    for frame_idx in sorted(fiducials_3d.keys()):
+        left_dets_list = raw_left.get(frame_idx, [])
+        right_dets_list = raw_right.get(frame_idx, [])
+
+        if not left_dets_list or not right_dets_list:
+            continue
+
+        # 我们的极线匹配
+        our_matches = epipolar_match_and_triangulate(
+            cal, left_dets_list, right_dets_list,
+            epipolar_max_distance=5.0)
+
+        # SDK 的匹配结果
+        sdk_fids = fiducials_3d.get(frame_idx, [])
+
+        # 建立 SDK 匹配的索引: (left_idx, right_idx) → fiducial
+        sdk_pairs = {}
+        for fid in sdk_fids:
+            sdk_pairs[(fid.left_index, fid.right_index)] = fid
+
+        # 建立我们的匹配索引
+        our_pairs = {}
+        for m in our_matches:
+            our_pairs[(m['left_idx'], m['right_idx'])] = m
+
+        # 比较
+        all_sdk_keys = set(sdk_pairs.keys())
+        all_our_keys = set(our_pairs.keys())
+
+        # 共同匹配对
+        common = all_sdk_keys & all_our_keys
+        match_correct += len(common)
+        match_total += len(all_sdk_keys)
+
+        # SDK 有但我们没有的
+        sdk_only += len(all_sdk_keys - all_our_keys)
+
+        # 我们有但 SDK 没有的
+        our_only += len(all_our_keys - all_sdk_keys)
+
+        # 检查左索引相同但右索引不同的情况
+        sdk_left_map = {fid.left_index: fid for fid in sdk_fids}
+        our_left_map = {m['left_idx']: m for m in our_matches}
+        for li in set(sdk_left_map.keys()) & set(our_left_map.keys()):
+            sdk_ri = sdk_left_map[li].right_index
+            our_ri = our_left_map[li]['right_idx']
+            if sdk_ri != our_ri:
+                match_wrong_pair += 1
+
+        # 对共同匹配对计算误差
+        for key in common:
+            sdk_fid = sdk_pairs[key]
+            our_m = our_pairs[key]
+
+            sdk_3d = np.array([sdk_fid.pos_x, sdk_fid.pos_y, sdk_fid.pos_z])
+            our_3d = our_m['pos_3d']
+
+            pos_err = np.linalg.norm(our_3d - sdk_3d)
+            epi_err = abs(our_m['epipolar_error'] - sdk_fid.epipolar_error)
+            tri_err = abs(our_m['triangulation_error'] - sdk_fid.triangulation_error)
+            prob_diff = abs(our_m['probability'] - sdk_fid.probability)
+
+            pos_errors.append(pos_err)
+            epi_errors.append(epi_err)
+            tri_errors.append(tri_err)
+            prob_diffs.append(prob_diff)
+
+    # 输出统计
+    print(f"\n  === 匹配对一致性 ===")
+    print(f"  SDK 总匹配对数: {match_total}")
+    print(f"  完全匹配 (left+right 一致): {match_correct}")
+    match_rate = 100.0 * match_correct / match_total if match_total > 0 else 0.0
+    print(f"  匹配一致率: {match_rate:.1f}%")
+    print(f"  SDK 有但我们缺失: {sdk_only}")
+    print(f"  我们有但 SDK 没有: {our_only}")
+    print(f"  左索引相同但右索引不同: {match_wrong_pair}")
+
+    if pos_errors:
+        pos_arr = np.array(pos_errors)
+        epi_arr = np.array(epi_errors)
+        tri_arr = np.array(tri_errors)
+        prob_arr = np.array(prob_diffs)
+
+        print(f"\n  === 共同匹配对的数值精度 ({len(pos_errors)} 对) ===")
+        print(f"  3D 位置误差: 平均={pos_arr.mean():.6f} mm, "
+              f"最大={pos_arr.max():.6f} mm")
+        print(f"  极线误差差值: 平均={epi_arr.mean():.6f} px, "
+              f"最大={epi_arr.max():.6f} px")
+        print(f"  三角化误差差值: 平均={tri_arr.mean():.6f} mm, "
+              f"最大={tri_arr.max():.6f} mm")
+        print(f"  概率差值: 平均={prob_arr.mean():.6f}, "
+              f"最大={prob_arr.max():.6f}")
+
+        # 高质量匹配 (pos < 0.05mm)
+        good_mask = pos_arr < 0.05
+        if good_mask.sum() > 0:
+            print(f"\n  高精度匹配 (<0.05mm): {good_mask.sum()}/{len(pos_arr)} "
+                  f"({100*good_mask.mean():.1f}%)")
+
+    # 判定
+    status = "pass" if match_rate > 90 else "fail"
+    print(f"\n  结果: {'PASS' if status == 'pass' else '需要检查'}")
+
+    return {
+        "status": status,
+        "match_total": match_total,
+        "match_correct": match_correct,
+        "match_rate": match_rate,
+        "sdk_only": sdk_only,
+        "our_only": our_only,
+        "wrong_pair": match_wrong_pair,
+        "pos_mean_mm": float(np.array(pos_errors).mean()) if pos_errors else 0.0,
+        "pos_max_mm": float(np.array(pos_errors).max()) if pos_errors else 0.0,
+        "epi_mean_px": float(np.array(epi_errors).mean()) if epi_errors else 0.0,
+        "prob_mean_diff": float(np.array(prob_diffs).mean()) if prob_diffs else 0.0,
+    }
+
+
 def verify_cross_references(fiducials_3d: Dict[int, List[Fiducial3D]],
                             raw_left: Dict[int, List[RawDetection]],
                             raw_right: Dict[int, List[RawDetection]],
@@ -1549,6 +1836,9 @@ def main():
         results["undistortion"] = verify_undistortion(cal, reprojections)
         results["circle_centroid"] = verify_circle_centroid(
             raw_left, raw_right, fiducials_3d, cal
+        )
+        results["epipolar_matching"] = verify_epipolar_matching(
+            cal, fiducials_3d, raw_left, raw_right
         )
     else:
         print("\n警告：没有标定数据 - 跳过依赖于标定的测试")

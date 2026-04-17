@@ -150,6 +150,29 @@ struct RegistrationResult {
 };
 
 // ===========================================================================
+// 极线匹配结果 — 单个匹配对
+// ===========================================================================
+
+struct EpipolarMatchResult {
+    uint32_t leftIndex;         // 左图检测索引
+    uint32_t rightIndex;        // 右图检测索引
+    Vec3 position;              // 三角化 3D 坐标 (mm)
+    double epipolarError;       // 极线误差 (pixels)
+    double triangulationError;  // 三角化误差 (mm)
+    double probability;         // 候选歧义度 (1/n)
+};
+
+// ===========================================================================
+// 2D 检测点输入 — 用于极线匹配
+// ===========================================================================
+
+struct Detection2D {
+    double centerX;     // 像素 X
+    double centerY;     // 像素 Y
+    uint32_t index;     // 原始检测索引
+};
+
+// ===========================================================================
 // StereoVision — 核心算法引擎
 // ===========================================================================
 
@@ -180,6 +203,34 @@ public:
     /// @param pos3d 3D 坐标 (mm)
     /// @return 重投影结果
     ReprojectionResult reprojectTo2D(const Vec3& pos3d) const;
+
+    /// 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
+    ///
+    /// 实现三步筛选 (与 DLL 一致):
+    ///   1. 阈值筛选: 极线距离 < epipolarMaxDistance
+    ///   2. 最优候选选择: 取距离最小
+    ///   3. 双向交叉验证: 左→右后反向右→左验证
+    ///
+    /// @param leftDets   左图 2D 检测点
+    /// @param leftCount  左图检测数
+    /// @param rightDets  右图 2D 检测点
+    /// @param rightCount 右图检测数
+    /// @param outResults 输出匹配结果
+    /// @param maxResults 最大输出数量
+    /// @param epipolarMaxDistance 极线最大距离 (pixels, 默认 3.0)
+    /// @return 实际匹配对数
+    uint32_t matchEpipolar(
+        const Detection2D* leftDets, uint32_t leftCount,
+        const Detection2D* rightDets, uint32_t rightCount,
+        EpipolarMatchResult* outResults, uint32_t maxResults,
+        double epipolarMaxDistance = 3.0) const;
+
+    /// 计算反向极线 (F^T * right_ideal_pixel) — 用于右→左交叉验证
+    Vec3 computeReverseEpipolarLine(double rightNormX, double rightNormY) const;
+
+    /// 点到左图极线距离 (反向) — 使用 K_L 变换
+    double pointToReverseEpipolarDistance(double leftNormX, double leftNormY,
+                                          const Vec3& epipolarLine) const;
 
     // ------------------------------------------------------------------
     // 低级算法 — 对外暴露以便测试和对比
