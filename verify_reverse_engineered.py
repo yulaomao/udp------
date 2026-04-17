@@ -31,6 +31,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+
+SDK_EPIPOLAR_MAX_DISTANCE = 5.0
+
 # ============================================================================
 # Data Loading
 # ============================================================================
@@ -411,6 +414,25 @@ def compute_fundamental_matrix(cal: Calibration) -> np.ndarray:
     return F
 
 
+def normalized_to_ideal_pixel(xn: float, yn: float, focal: np.ndarray,
+                              center: np.ndarray, skew: float) -> np.ndarray:
+    """Convert normalized undistorted coordinates to ideal pixel coordinates."""
+    return np.array([
+        focal[0] * xn + skew * focal[0] * yn + center[0],
+        focal[1] * yn + center[1],
+        1.0,
+    ])
+
+
+def signed_distance_to_epipolar_line(line: np.ndarray,
+                                     point_ideal: np.ndarray) -> float:
+    """Signed distance from an ideal pixel point to an epipolar line."""
+    norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
+    if norm < 1e-12:
+        return 0.0
+    return (line[0] * point_ideal[0] + line[1] * point_ideal[1] + line[2]) / norm
+
+
 def undistort_point(px: float, py: float, focal: np.ndarray,
                     center: np.ndarray, distortion: np.ndarray,
                     skew: float) -> Tuple[float, float]:
@@ -614,24 +636,16 @@ def triangulate_point(cal: Calibration, left_px: float, left_py: float,
     F = compute_fundamental_matrix(cal)
 
     # Undistorted ideal left pixel: KL * (lx, ly, 1) — no distortion, only intrinsics
-    left_ideal = np.array([
-        cal.left_focal[0] * lx + cal.left_skew * cal.left_focal[0] * ly + cal.left_center[0],
-        cal.left_focal[1] * ly + cal.left_center[1],
-        1.0,
-    ])
+    left_ideal = normalized_to_ideal_pixel(
+        lx, ly, cal.left_focal, cal.left_center, cal.left_skew
+    )
     # Undistorted ideal right pixel: KR * (rx, ry, 1) — no distortion, only intrinsics
-    right_ideal = np.array([
-        cal.right_focal[0] * rx + cal.right_skew * cal.right_focal[0] * ry + cal.right_center[0],
-        cal.right_focal[1] * ry + cal.right_center[1],
-        1.0,
-    ])
+    right_ideal = normalized_to_ideal_pixel(
+        rx, ry, cal.right_focal, cal.right_center, cal.right_skew
+    )
 
     line = F @ left_ideal
-    norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
-    if norm > 1e-12:
-        epi_err = (line[0] * right_ideal[0] + line[1] * right_ideal[1] + line[2]) / norm
-    else:
-        epi_err = 0.0
+    epi_err = signed_distance_to_epipolar_line(line, right_ideal)
 
     # SDK stores epipolar error as float32
     epi_err = float(np.float32(epi_err))
@@ -902,23 +916,15 @@ def verify_epipolar_geometry(cal: Calibration,
                                      cal.right_distortion, cal.right_skew)
 
             # Undistorted ideal pixels: K * normalized (no distortion model)
-            left_ideal = np.array([
-                cal.left_focal[0] * lx + cal.left_skew * cal.left_focal[0] * ly + cal.left_center[0],
-                cal.left_focal[1] * ly + cal.left_center[1],
-                1.0,
-            ])
-            right_ideal = np.array([
-                cal.right_focal[0] * rx + cal.right_skew * cal.right_focal[0] * ry + cal.right_center[0],
-                cal.right_focal[1] * ry + cal.right_center[1],
-                1.0,
-            ])
+            left_ideal = normalized_to_ideal_pixel(
+                lx, ly, cal.left_focal, cal.left_center, cal.left_skew
+            )
+            right_ideal = normalized_to_ideal_pixel(
+                rx, ry, cal.right_focal, cal.right_center, cal.right_skew
+            )
 
             line = F @ left_ideal
-            norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
-            if norm > 1e-12:
-                our_epi = (line[0] * right_ideal[0] + line[1] * right_ideal[1] + line[2]) / norm
-            else:
-                our_epi = 0.0
+            our_epi = signed_distance_to_epipolar_line(line, right_ideal)
 
             epi_errors_our.append(our_epi)
             epi_errors_sdk.append(fid.epipolar_error)
@@ -1405,20 +1411,19 @@ def epipolar_match_and_triangulate(
         cal: Calibration,
         left_dets: List[RawDetection],
         right_dets: List[RawDetection],
-        epipolar_max_distance: float = 5.0,
+    epipolar_max_distance: float = SDK_EPIPOLAR_MAX_DISTANCE,
 ) -> List[dict]:
     """完整极线匹配管线 — 还原 DLL Match2D3D 逻辑。
 
     SDK 实际行为 (从 dump 数据分析):
       - 允许一对多匹配 (一个左图点可匹配多个右图点)
       - 对每个左图点, 所有极线距离 < threshold 的右图点都被接受
-      - 双向验证: 反向也检查右→左极线距离 < threshold
+        - 仅执行前向极线验证, 不做右→左反向检查
       - probability = 1/n (n = 该左图点的候选右图点数)
 
     返回匹配结果列表。
     """
     F = compute_fundamental_matrix(cal)
-    F_transpose = F.T
     R = rodrigues_to_rotation_matrix(cal.rotation)
     t = cal.translation
     Rt = R.T
@@ -1438,55 +1443,33 @@ def epipolar_match_and_triangulate(
                                  cal.right_distortion, cal.right_skew)
         right_norms.append((rx, ry))
 
-    # 预计算理想像素坐标 (无畸变)
-    def left_ideal_pixel(lx, ly):
-        return np.array([
-            cal.left_focal[0] * lx + cal.left_skew * cal.left_focal[0] * ly + cal.left_center[0],
-            cal.left_focal[1] * ly + cal.left_center[1],
-            1.0,
-        ])
-
-    def right_ideal_pixel(rx, ry):
-        return np.array([
-            cal.right_focal[0] * rx + cal.right_skew * cal.right_focal[0] * ry + cal.right_center[0],
-            cal.right_focal[1] * ry + cal.right_center[1],
-            1.0,
-        ])
-
-    def line_distance(F_matrix, src_ideal, tgt_ideal):
-        """计算极线距离 (absolute)."""
-        line = F_matrix @ src_ideal
-        norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
-        if norm < 1e-12:
-            return float('inf')
-        return abs((line[0] * tgt_ideal[0] + line[1] * tgt_ideal[1] + line[2]) / norm)
-
-    def signed_line_distance(F_matrix, src_ideal, tgt_ideal):
-        """计算极线距离 (signed, 用于 epipolar error)."""
-        line = F_matrix @ src_ideal
-        norm = math.sqrt(line[0] ** 2 + line[1] ** 2)
-        if norm < 1e-12:
-            return 0.0
-        return (line[0] * tgt_ideal[0] + line[1] * tgt_ideal[1] + line[2]) / norm
+    left_ideals = [
+        normalized_to_ideal_pixel(lx, ly, cal.left_focal, cal.left_center, cal.left_skew)
+        for lx, ly in left_norms
+    ]
+    right_ideals = [
+        normalized_to_ideal_pixel(rx, ry, cal.right_focal, cal.right_center, cal.right_skew)
+        for rx, ry in right_norms
+    ]
 
     results = []
 
-    # 对每个左图点, 找所有右图候选
+    # 对每个左图点, 找所有右图候选。SDK 只检查前向极线距离。
     for li, (lx, ly) in enumerate(left_norms):
-        l_ideal = left_ideal_pixel(lx, ly)
+        l_ideal = left_ideals[li]
+        fwd_line = F @ l_ideal
+        fwd_line_norm = math.sqrt(fwd_line[0] ** 2 + fwd_line[1] ** 2)
+        if fwd_line_norm < 1e-12:
+            continue
+
         candidates = []
 
         for ri, (rx, ry) in enumerate(right_norms):
-            r_ideal = right_ideal_pixel(rx, ry)
+            r_ideal = right_ideals[ri]
 
             # 前向: 左→右极线距离
-            fwd_dist = line_distance(F, l_ideal, r_ideal)
+            fwd_dist = abs(signed_distance_to_epipolar_line(fwd_line, r_ideal))
             if fwd_dist >= epipolar_max_distance:
-                continue
-
-            # 反向验证: 右→左极线距离也要在阈值内
-            rev_dist = line_distance(F_transpose, r_ideal, l_ideal)
-            if rev_dist >= epipolar_max_distance:
                 continue
 
             candidates.append((ri, fwd_dist))
@@ -1495,7 +1478,7 @@ def epipolar_match_and_triangulate(
             continue
 
         n_candidates = len(candidates)
-        probability = 1.0 / n_candidates
+        probability = float(np.float32(1.0 / n_candidates))
 
         # 输出所有候选 (SDK 的行为: 每个候选都产生一个 fiducial)
         for ri, fwd_dist in candidates:
@@ -1519,9 +1502,8 @@ def epipolar_match_and_triangulate(
             tri_err = float(np.float32(tri_err))
 
             # 极线误差 (signed)
-            l_ideal = left_ideal_pixel(lx, ly)
-            r_ideal = right_ideal_pixel(rx, ry)
-            epi_err = signed_line_distance(F, l_ideal, r_ideal)
+            r_ideal = right_ideals[ri]
+            epi_err = signed_distance_to_epipolar_line(fwd_line, r_ideal)
             epi_err = float(np.float32(epi_err))
 
             results.append({
@@ -1533,7 +1515,6 @@ def epipolar_match_and_triangulate(
                 'probability': probability,
                 'fwd_distance': fwd_dist,
                 'fwd_candidates': n_candidates,
-                'rev_candidates': n_candidates,
             })
 
     return results
@@ -1547,17 +1528,18 @@ def verify_epipolar_matching(cal: Calibration,
 
     实现 DLL Match2D3D 的关键步骤:
       1. 阈值筛选 (epipolarMaxDistance)
-      2. 双向验证 (前向+反向极线距离均在阈值内)
-      3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
+        2. 仅做前向极线距离检查
+        3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
 
     对比指标:
       - 匹配对一致性 (left_idx, right_idx 是否与 SDK 相同)
+        - 左点候选集合一致性 (用于一对多匹配)
       - 3D 坐标差异
       - 极线误差差异
       - 概率值差异
     """
     print("\n" + "=" * 70)
-    print("验证 8：极线匹配（Match2D3D — 阈值+双向验证+全候选输出）")
+    print("验证 8：极线匹配（Match2D3D — 仅前向极线+全候选输出）")
     print("=" * 70)
 
     match_correct = 0
@@ -1568,7 +1550,7 @@ def verify_epipolar_matching(cal: Calibration,
     prob_diffs = []
     sdk_only = 0
     our_only = 0
-    match_wrong_pair = 0
+    left_group_mismatch = 0
 
     for frame_idx in sorted(fiducials_3d.keys()):
         left_dets_list = raw_left.get(frame_idx, [])
@@ -1611,13 +1593,16 @@ def verify_epipolar_matching(cal: Calibration,
         our_only += len(all_our_keys - all_sdk_keys)
 
         # 检查左索引相同但右索引不同的情况
-        sdk_left_map = {fid.left_index: fid for fid in sdk_fids}
-        our_left_map = {m['left_idx']: m for m in our_matches}
-        for li in set(sdk_left_map.keys()) & set(our_left_map.keys()):
-            sdk_ri = sdk_left_map[li].right_index
-            our_ri = our_left_map[li]['right_idx']
-            if sdk_ri != our_ri:
-                match_wrong_pair += 1
+        sdk_left_groups = defaultdict(set)
+        our_left_groups = defaultdict(set)
+        for fid in sdk_fids:
+            sdk_left_groups[fid.left_index].add(fid.right_index)
+        for match in our_matches:
+            our_left_groups[match['left_idx']].add(match['right_idx'])
+
+        for li in set(sdk_left_groups.keys()) | set(our_left_groups.keys()):
+            if sdk_left_groups.get(li, set()) != our_left_groups.get(li, set()):
+                left_group_mismatch += 1
 
         # 对共同匹配对计算误差
         for key in common:
@@ -1645,7 +1630,7 @@ def verify_epipolar_matching(cal: Calibration,
     print(f"  匹配一致率: {match_rate:.1f}%")
     print(f"  SDK 有但我们缺失: {sdk_only}")
     print(f"  我们有但 SDK 没有: {our_only}")
-    print(f"  左索引相同但右索引不同: {match_wrong_pair}")
+    print(f"  左点候选集合不一致: {left_group_mismatch}")
 
     if pos_errors:
         pos_arr = np.array(pos_errors)
@@ -1680,7 +1665,7 @@ def verify_epipolar_matching(cal: Calibration,
         "match_rate": match_rate,
         "sdk_only": sdk_only,
         "our_only": our_only,
-        "wrong_pair": match_wrong_pair,
+        "left_group_mismatch": left_group_mismatch,
         "pos_mean_mm": float(np.array(pos_errors).mean()) if pos_errors else 0.0,
         "pos_max_mm": float(np.array(pos_errors).max()) if pos_errors else 0.0,
         "epi_mean_px": float(np.array(epi_errors).mean()) if epi_errors else 0.0,
