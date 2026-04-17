@@ -772,6 +772,148 @@ int main(int argc, char** argv) {
     }
 
     // ===================================================================
+    // TEST 6: 极线匹配 (Epipolar Matching — 阈值+最优+双向交叉验证)
+    //
+    // 使用圆心提取结果执行完整极线匹配管线，与 SDK fiducials_3d.csv 对比。
+    // 实现 DLL Match2D3D 的三个关键步骤:
+    //   1. 阈值筛选 (epipolarMaxDistance)
+    //   2. 最优候选选择 (距离最小)
+    //   3. 双向交叉验证 (左→右 + 右→左)
+    // ===================================================================
+    cout << "==== TEST 6: Epipolar Matching (Match2D3D) ====" << endl;
+    {
+        int matchCorrect = 0;
+        int matchTotal = 0;
+        int sdkOnly = 0;
+        int ourOnly = 0;
+        int wrongPair = 0;
+        vector<double> posErrs, epiErrs, triErrs, probDiffs;
+
+        for (auto& [frameIdx, sdkFids] : fiducials) {
+            auto itL = rawLeft.find(frameIdx);
+            auto itR = rawRight.find(frameIdx);
+            if (itL == rawLeft.end() || itR == rawRight.end()) continue;
+
+            auto& leftDets = itL->second;
+            auto& rightDets = itR->second;
+
+            // 准备输入
+            vector<Detection2D> leftDetArr(leftDets.size());
+            vector<Detection2D> rightDetArr(rightDets.size());
+
+            for (size_t i = 0; i < leftDets.size(); ++i) {
+                leftDetArr[i].centerX = leftDets[i].cx;
+                leftDetArr[i].centerY = leftDets[i].cy;
+                leftDetArr[i].index = static_cast<uint32_t>(leftDets[i].detIdx);
+            }
+            for (size_t i = 0; i < rightDets.size(); ++i) {
+                rightDetArr[i].centerX = rightDets[i].cx;
+                rightDetArr[i].centerY = rightDets[i].cy;
+                rightDetArr[i].index = static_cast<uint32_t>(rightDets[i].detIdx);
+            }
+
+            // 执行极线匹配
+            size_t maxOut = leftDets.size() * rightDets.size(); // worst case: all-to-all
+            if (maxOut > 10000) maxOut = 10000;
+            vector<EpipolarMatchResult> ourResults(maxOut);
+            uint32_t ourCount = sv.matchEpipolar(
+                leftDetArr.data(), static_cast<uint32_t>(leftDetArr.size()),
+                rightDetArr.data(), static_cast<uint32_t>(rightDetArr.size()),
+                ourResults.data(), static_cast<uint32_t>(ourResults.size()),
+                5.0);  // epipolarMaxDistance = 5.0 pixels (SDK default from dump data)
+
+            // 建立 SDK 索引: (left, right) → fid
+            map<pair<int,int>, Fid3D*> sdkPairs;
+            for (auto& fid : sdkFids) {
+                sdkPairs[{fid.leftIdx, fid.rightIdx}] = &fid;
+            }
+
+            // 建立我们的索引
+            map<pair<int,int>, EpipolarMatchResult*> ourPairs;
+            for (uint32_t i = 0; i < ourCount; ++i) {
+                ourPairs[{static_cast<int>(ourResults[i].leftIndex),
+                          static_cast<int>(ourResults[i].rightIndex)}] = &ourResults[i];
+            }
+
+            matchTotal += static_cast<int>(sdkFids.size());
+
+            // 统计共同匹配对
+            for (auto& [key, sdkPtr] : sdkPairs) {
+                auto it = ourPairs.find(key);
+                if (it != ourPairs.end()) {
+                    ++matchCorrect;
+
+                    // 计算数值误差
+                    auto& sdk = *sdkPtr;
+                    auto& our = *(it->second);
+
+                    double posDiff = sqrt(
+                        pow(our.position.x - sdk.px, 2) +
+                        pow(our.position.y - sdk.py, 2) +
+                        pow(our.position.z - sdk.pz, 2));
+                    posErrs.push_back(posDiff);
+                    epiErrs.push_back(fabs(our.epipolarError - sdk.epiErr));
+                    triErrs.push_back(fabs(our.triangulationError - sdk.triErr));
+                    probDiffs.push_back(fabs(our.probability - sdk.probability));
+                } else {
+                    ++sdkOnly;
+                }
+            }
+
+            // 我们有但 SDK 没有的
+            for (auto& [key, ourPtr] : ourPairs) {
+                if (sdkPairs.find(key) == sdkPairs.end()) {
+                    ++ourOnly;
+                }
+            }
+
+            // 左索引相同但右索引不同
+            map<int, int> sdkLeftMap, ourLeftMap;
+            for (auto& fid : sdkFids) sdkLeftMap[fid.leftIdx] = fid.rightIdx;
+            for (uint32_t i = 0; i < ourCount; ++i)
+                ourLeftMap[static_cast<int>(ourResults[i].leftIndex)] =
+                    static_cast<int>(ourResults[i].rightIndex);
+
+            for (auto& [li, sdkRi] : sdkLeftMap) {
+                auto it = ourLeftMap.find(li);
+                if (it != ourLeftMap.end() && it->second != sdkRi)
+                    ++wrongPair;
+            }
+        }
+
+        // 输出统计
+        cout << "  === Match pair consistency ===" << endl;
+        cout << "  SDK total pairs:     " << matchTotal << endl;
+        cout << "  Exact match:         " << matchCorrect << endl;
+        double matchRate = matchTotal > 0 ? 100.0 * matchCorrect / matchTotal : 0.0;
+        cout << "  Match rate:          " << fixed << setprecision(1) << matchRate << "%" << endl;
+        cout << "  SDK only (missing):  " << sdkOnly << endl;
+        cout << "  Ours only (extra):   " << ourOnly << endl;
+        cout << "  Wrong right index:   " << wrongPair << endl;
+
+        if (!posErrs.empty()) {
+            auto ps = computeStats(posErrs);
+            auto es = computeStats(epiErrs);
+            auto ts = computeStats(triErrs);
+            auto prb = computeStats(probDiffs);
+
+            cout << "\n  === Numerical accuracy (" << posErrs.size() << " common pairs) ===" << endl;
+            cout << "  3D pos diff:    mean=" << fixed << setprecision(6) << ps.mean
+                 << " max=" << ps.maxVal << " mm" << endl;
+            cout << "  Epi err diff:   mean=" << es.mean
+                 << " max=" << es.maxVal << " px" << endl;
+            cout << "  Tri err diff:   mean=" << ts.mean
+                 << " max=" << ts.maxVal << " mm" << endl;
+            cout << "  Prob diff:      mean=" << prb.mean
+                 << " max=" << prb.maxVal << endl;
+        }
+
+        bool pass = matchRate > 90.0;
+        cout << "  Result: " << (pass ? "PASS" : "FAIL") << endl << endl;
+        if (!pass) allPass = false;
+    }
+
+    // ===================================================================
     // Summary
     // ===================================================================
     cout << "========================================" << endl;

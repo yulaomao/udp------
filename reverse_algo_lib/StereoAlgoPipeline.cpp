@@ -141,10 +141,10 @@ bool StereoAlgoPipeline::reproject(
 // ===========================================================================
 // 批量极线匹配+三角化
 //
-// 实现与 SDK 一致的极线匹配流程:
-//   1. 对每个左图点, 计算极线
-//   2. 在右图中找距极线最近的点 (距离 < epipolarMaxDist)
-//   3. 对每个匹配对, 三角化
+// 实现与 SDK 一致的极线匹配流程 (还原 DLL Match2D3D):
+//   1. 对每个左图点, 计算极线, 找所有右候选 (距离 < epipolarMaxDist)
+//   2. 双向验证: 反向极线距离也要在阈值内
+//   3. 所有通过验证的候选都产生 fiducial (允许一对多, probability=1/n)
 // ===========================================================================
 
 uint32_t StereoAlgoPipeline::matchAndTriangulate(
@@ -159,85 +159,44 @@ uint32_t StereoAlgoPipeline::matchAndTriangulate(
         !fiducials || maxFiducials == 0)
         return 0;
 
-    // 预计算所有右图点的归一化坐标
-    std::vector<Vec2> rightNorm(rightCount);
-    for (uint32_t r = 0; r < rightCount; ++r) {
-        rightNorm[r] = m_sv.undistortPoint(
-            rightRawData[r].centerXPixels,
-            rightRawData[r].centerYPixels,
-            m_cal.rightCam);
+    // 转换为 Detection2D 格式
+    std::vector<Detection2D> leftDets(leftCount);
+    std::vector<Detection2D> rightDets(rightCount);
+
+    for (uint32_t i = 0; i < leftCount; ++i) {
+        leftDets[i].centerX = leftRawData[i].centerXPixels;
+        leftDets[i].centerY = leftRawData[i].centerYPixels;
+        leftDets[i].index = i;
+    }
+    for (uint32_t i = 0; i < rightCount; ++i) {
+        rightDets[i].centerX = rightRawData[i].centerXPixels;
+        rightDets[i].centerY = rightRawData[i].centerYPixels;
+        rightDets[i].index = i;
     }
 
-    // 标记哪些右图点已被使用 (用于最佳匹配)
-    std::vector<bool> rightUsed(rightCount, false);
+    // 使用核心极线匹配算法
+    std::vector<EpipolarMatchResult> results(maxFiducials);
+    uint32_t matchCount = m_sv.matchEpipolar(
+        leftDets.data(), leftCount,
+        rightDets.data(), rightCount,
+        results.data(), maxFiducials,
+        m_epipolarMaxDist);
 
-    uint32_t fidCount = 0;
-
-    for (uint32_t li = 0; li < leftCount && fidCount < maxFiducials; ++li) {
-        // 去畸变左图点
-        Vec2 leftNorm = m_sv.undistortPoint(
-            leftRawData[li].centerXPixels,
-            leftRawData[li].centerYPixels,
-            m_cal.leftCam);
-
-        // 计算极线
-        Vec3 line = m_sv.computeEpipolarLine(leftNorm.x, leftNorm.y);
-        if (line.x == 0.0 && line.y == 0.0 && line.z == 0.0) continue;
-
-        // 找距极线最近的右图点
-        struct Match {
-            uint32_t idx;
-            double dist;
-        };
-        std::vector<Match> candidates;
-
-        for (uint32_t ri = 0; ri < rightCount; ++ri) {
-            double dist = m_sv.pointToEpipolarDistance(
-                rightNorm[ri].x, rightNorm[ri].y, line);
-            double absDist = std::fabs(dist);
-
-            if (absDist < m_epipolarMaxDist) {
-                candidates.push_back({ ri, absDist });
-            }
-        }
-
-        if (candidates.empty()) continue;
-
-        // 排序: 距离最小优先
-        std::sort(candidates.begin(), candidates.end(),
-                  [](const Match& a, const Match& b) { return a.dist < b.dist; });
-
-        // 找到最佳未使用的匹配
-        for (const auto& cand : candidates) {
-            // 三角化
-            auto res = m_sv.triangulatePoint(
-                leftRawData[li].centerXPixels,
-                leftRawData[li].centerYPixels,
-                rightRawData[cand.idx].centerXPixels,
-                rightRawData[cand.idx].centerYPixels);
-
-            if (!res.success) continue;
-
-            // 填充 ftk3DFiducial
-            ftk3DFiducial& fid = fiducials[fidCount];
-            std::memset(&fid, 0, sizeof(fid));
-            fid.leftIndex = li;
-            fid.rightIndex = cand.idx;
-            fid.positionMM.x = static_cast<floatXX>(res.position.x);
-            fid.positionMM.y = static_cast<floatXX>(res.position.y);
-            fid.positionMM.z = static_cast<floatXX>(res.position.z);
-            fid.epipolarErrorPixels = static_cast<floatXX>(res.epipolarError);
-            fid.triangulationErrorMM = static_cast<floatXX>(res.triangulationError);
-
-            // 概率: 基于候选数量
-            fid.probability = (candidates.size() == 1) ? 1.0f : (1.0f / candidates.size());
-
-            ++fidCount;
-            break;  // 每个左图点只取最佳匹配
-        }
+    // 转换为 ftk3DFiducial 格式
+    for (uint32_t i = 0; i < matchCount; ++i) {
+        ftk3DFiducial& fid = fiducials[i];
+        std::memset(&fid, 0, sizeof(fid));
+        fid.leftIndex = results[i].leftIndex;
+        fid.rightIndex = results[i].rightIndex;
+        fid.positionMM.x = static_cast<floatXX>(results[i].position.x);
+        fid.positionMM.y = static_cast<floatXX>(results[i].position.y);
+        fid.positionMM.z = static_cast<floatXX>(results[i].position.z);
+        fid.epipolarErrorPixels = static_cast<floatXX>(results[i].epipolarError);
+        fid.triangulationErrorMM = static_cast<floatXX>(results[i].triangulationError);
+        fid.probability = static_cast<float>(results[i].probability);
     }
 
-    return fidCount;
+    return matchCount;
 }
 
 // ===========================================================================

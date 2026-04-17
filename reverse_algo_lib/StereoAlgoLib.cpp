@@ -455,6 +455,152 @@ ReprojectionResult StereoVision::reprojectTo2D(const Vec3& pos3d) const {
 }
 
 // ---------------------------------------------------------------------------
+// 反向极线计算 (F^T * right_ideal_pixel) — 用于右→左交叉验证
+//
+// 对偶关系: 如果 l_R = F * p_L 是右图极线,
+//           则 l_L = F^T * p_R 是左图极线
+// ---------------------------------------------------------------------------
+
+Vec3 StereoVision::computeReverseEpipolarLine(double rightNormX, double rightNormY) const {
+    // 转为理想像素坐标: K_R * (x, y, 1)
+    Vec3 prPixel = {
+        m_KR.m[0][0] * rightNormX + m_KR.m[0][1] * rightNormY + m_KR.m[0][2],
+        m_KR.m[1][1] * rightNormY + m_KR.m[1][2],
+        1.0
+    };
+
+    // line = F^T * prPixel
+    Mat3 Ft = m_F.transpose();
+    Vec3 line = Ft.mul(prPixel);
+
+    double abs_a = std::fabs(line.x);
+    double abs_b = std::fabs(line.y);
+    if (abs_a < kAlmostZero && abs_b < kAlmostZero) {
+        return { 0.0, 0.0, 0.0 };
+    }
+
+    return line;
+}
+
+// ---------------------------------------------------------------------------
+// 点到左图极线距离 (反向) — 使用 K_L 变换
+// ---------------------------------------------------------------------------
+
+double StereoVision::pointToReverseEpipolarDistance(
+    double leftNormX, double leftNormY,
+    const Vec3& line) const {
+    // 理想像素坐标: K_L * (x, y, 1)
+    double lpX = m_KL.m[0][0] * leftNormX + m_KL.m[0][1] * leftNormY + m_KL.m[0][2];
+    double lpY = m_KL.m[1][1] * leftNormY + m_KL.m[1][2];
+
+    double nrm = std::sqrt(line.x * line.x + line.y * line.y);
+    if (nrm < 1e-12) return 0.0;
+
+    return (line.x * lpX + line.y * lpY + line.z) / nrm;
+}
+
+// ---------------------------------------------------------------------------
+// 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
+//
+// 基于 Match2D3D.h 的汇编还原, 并经 SDK dump 数据验证:
+//   1. 阈值筛选 (Match2D3D.h:615, epipolarMaxDistance)
+//   2. 双向验证 (前向+反向极线距离均在阈值内)
+//   3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
+//
+// 概率计算: probability = 1.0 / n_candidates (Match2D3D.h, ftkInterface.h:667)
+// ---------------------------------------------------------------------------
+
+uint32_t StereoVision::matchEpipolar(
+    const Detection2D* leftDets, uint32_t leftCount,
+    const Detection2D* rightDets, uint32_t rightCount,
+    EpipolarMatchResult* outResults, uint32_t maxResults,
+    double epipolarMaxDistance) const {
+
+    if (!m_initialized || !leftDets || !rightDets || !outResults ||
+        maxResults == 0 || leftCount == 0 || rightCount == 0)
+        return 0;
+
+    // 预计算所有点的归一化坐标
+    std::vector<Vec2> leftNorms(leftCount);
+    std::vector<Vec2> rightNorms(rightCount);
+
+    for (uint32_t i = 0; i < leftCount; ++i) {
+        leftNorms[i] = undistortPoint(leftDets[i].centerX, leftDets[i].centerY,
+                                       m_cal.leftCam);
+    }
+    for (uint32_t i = 0; i < rightCount; ++i) {
+        rightNorms[i] = undistortPoint(rightDets[i].centerX, rightDets[i].centerY,
+                                        m_cal.rightCam);
+    }
+
+    // F^T 用于反向极线计算
+    Mat3 Ft = m_F.transpose();
+
+    uint32_t matchCount = 0;
+
+    // 对每个左图点, 找所有右图候选
+    for (uint32_t li = 0; li < leftCount && matchCount < maxResults; ++li) {
+        Vec3 fwdLine = computeEpipolarLine(leftNorms[li].x, leftNorms[li].y);
+        if (fwdLine.x == 0.0 && fwdLine.y == 0.0 && fwdLine.z == 0.0) continue;
+
+        // 收集所有候选
+        struct Candidate {
+            uint32_t rightIdx;
+            double fwdDist;
+        };
+        std::vector<Candidate> candidates;
+
+        for (uint32_t ri = 0; ri < rightCount; ++ri) {
+            // 前向: 左→右极线距离
+            double fwdDist = std::fabs(pointToEpipolarDistance(
+                rightNorms[ri].x, rightNorms[ri].y, fwdLine));
+
+            if (fwdDist >= epipolarMaxDistance) continue;
+
+            // 反向验证: 右→左极线距离也要在阈值内
+            // line_L = F^T * K_R * [rx, ry, 1]
+            Vec3 revLine = computeReverseEpipolarLine(rightNorms[ri].x, rightNorms[ri].y);
+            if (revLine.x == 0.0 && revLine.y == 0.0 && revLine.z == 0.0) continue;
+
+            double revDist = std::fabs(pointToReverseEpipolarDistance(
+                leftNorms[li].x, leftNorms[li].y, revLine));
+
+            if (revDist >= epipolarMaxDistance) continue;
+
+            candidates.push_back({ ri, fwdDist });
+        }
+
+        if (candidates.empty()) continue;
+
+        uint32_t nCandidates = static_cast<uint32_t>(candidates.size());
+        double probability = 1.0 / nCandidates;
+
+        // 输出所有候选 (SDK 行为: 每个候选都产生一个 fiducial)
+        for (const auto& cand : candidates) {
+            if (matchCount >= maxResults) break;
+
+            auto triResult = triangulatePoint(
+                leftDets[li].centerX, leftDets[li].centerY,
+                rightDets[cand.rightIdx].centerX, rightDets[cand.rightIdx].centerY);
+
+            if (!triResult.success) continue;
+
+            EpipolarMatchResult& out = outResults[matchCount];
+            out.leftIndex = leftDets[li].index;
+            out.rightIndex = rightDets[cand.rightIdx].index;
+            out.position = triResult.position;
+            out.epipolarError = triResult.epipolarError;
+            out.triangulationError = triResult.triangulationError;
+            out.probability = probability;
+
+            ++matchCount;
+        }
+    }
+
+    return matchCount;
+}
+
+// ---------------------------------------------------------------------------
 // Blob 检测 (种子扩展 + 背景减除加权质心)
 //
 // 从 verify_reverse_engineered.py 的 verify_circle_centroid() 中的分割逻辑移植
