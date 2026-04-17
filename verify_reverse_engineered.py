@@ -437,7 +437,8 @@ def undistort_point(px: float, py: float, focal: np.ndarray,
 
         radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6
         if abs(radial) < 1e-7:
-            return xn, yn  # Singular, return current estimate
+            # Avoid division by zero when radial distortion term approaches zero
+            return xn, yn
 
         inv_radial = 1.0 / radial
         # DLL tangential order: p2*(r²+2x²) + 2*p1*xy for dx
@@ -813,7 +814,7 @@ def verify_triangulation(cal: Calibration,
         print(f"\n  Outlier matches (status>0): {outlier_count}")
         print(f"    3D position error:       mean={out_pos.mean():.6f} mm, "
               f"max={out_pos.max():.6f} mm")
-        print(f"    (Large errors expected: far-away/ambiguous points stored as float32)")
+        print(f"    (Large errors expected: float32 precision degrades with distance, ~30mm at 93km depth)")
 
     # Pass rate based on good matches: float32 precision gives ~0.03mm max error
     threshold_mm = 0.05  # 50 microns — accounts for float32 precision
