@@ -41,121 +41,196 @@ uint32_t ReverseEngineeredPipeline::detectBlobs(
     if (imageData == nullptr || rawData == nullptr || maxDetections == 0)
         return 0;
 
-    // 创建 Image 适配器
-    // SegmenterV21 使用模板化的 Image 接口
-    // 这里我们直接实现内联的分割逻辑，等价于 SegmenterV21::segment()
-
     using namespace measurement::segmenter;
 
     // ================================================================
-    // 步骤 1: 种子扩展分割 (Seed Expansion)
-    // DLL: 0x3CCE0-0x3DB1B
+    // 步骤 1: 种子扩展分割 (RLE Seed Expansion) — 优化版
+    //
+    // 基于 fusionTrack64.dll 反汇编 (DLL: 0x3CCE0-0x3DB1B) 的 RLE 扫描线
+    // 种子扩展策略优化:
+    //  - RLE 行程扫描: 水平扩展 run + 垂直播种
+    //  - uint8_t 平坦 visited 替代 vector<bool>
+    //  - 可复用缓冲区 (runs/seedStack) 避免每 blob 堆分配
+    //  - 单遍统计: bbox / minIntensity 在行程展开中累积
+    //  - 尽早放弃: 面积超 maxArea 立即终止
     // ================================================================
     const uint32_t threshold = m_segConfig.seedThreshold;
     const uint32_t minArea = m_segConfig.blobMinSurface;
     const uint32_t maxArea = m_segConfig.blobMaxSurface;
     const float minAspect = m_segConfig.blobMinAspectRatio;
+    const uint8_t thresh = static_cast<uint8_t>(
+        threshold <= 255 ? threshold : 255);
 
-    std::vector<bool> visited(width * height, false);
+    const size_t totalPixels = static_cast<size_t>(width) * height;
+    std::vector<uint8_t> visited(totalPixels, 0);
+
+    struct Run { uint32_t row, colStart, colEnd; };
+    struct Seed { uint32_t x, y; };
+    std::vector<Run> runs;
+    std::vector<Seed> seedStack;
+
     uint32_t detCount = 0;
 
     for (uint32_t y = 0; y < height && detCount < maxDetections; ++y)
     {
+        const uint8_t* rowPtr = imageData + static_cast<size_t>(y) * width;
+        uint8_t* visitedRow = visited.data() + static_cast<size_t>(y) * width;
+
         for (uint32_t x = 0; x < width && detCount < maxDetections; ++x)
         {
-            uint32_t idx = y * width + x;
-            if (visited[idx])
-                continue;
+            if (visitedRow[x]) continue;
 
-            uint8_t val = imageData[idx];
-            if (val < threshold)
+            if (rowPtr[x] < thresh)
             {
-                visited[idx] = true;
+                visitedRow[x] = 1;
                 continue;
             }
 
-            // 种子扩展: 洪泛填充 (4-连通)
-            struct Pixel { uint32_t x, y; uint8_t val; };
-            std::vector<Pixel> blobPixels;
-            std::vector<std::pair<uint32_t, uint32_t>> stack;
-            stack.push_back({x, y});
-            visited[idx] = true;
+            // RLE Seed Expansion
+            runs.clear();
+            seedStack.clear();
+            seedStack.push_back({x, y});
+            visitedRow[x] = 1;
 
-            while (!stack.empty())
+            uint32_t area = 0;
+            uint32_t bMinX = x, bMaxX = x, bMinY = y, bMaxY = y;
+            uint8_t  minIntensity = 255;
+            bool     overflow = false;
+
+            while (!seedStack.empty())
             {
-                auto [cx, cy] = stack.back();
-                stack.pop_back();
-                blobPixels.push_back({cx, cy, imageData[cy * width + cx]});
+                auto [sx, sy] = seedStack.back();
+                seedStack.pop_back();
 
-                // 4-连通邻域
-                const int dx[] = {-1, 1, 0, 0};
-                const int dy[] = {0, 0, -1, 1};
-                for (int d = 0; d < 4; ++d)
+                const uint8_t* imgRow = imageData + static_cast<size_t>(sy) * width;
+                uint8_t* visRow = visited.data() + static_cast<size_t>(sy) * width;
+
+                // Horizontal expansion: left
+                uint32_t left = sx;
+                while (left > 0 && !visRow[left - 1] && imgRow[left - 1] >= thresh)
                 {
-                    int nx = static_cast<int>(cx) + dx[d];
-                    int ny = static_cast<int>(cy) + dy[d];
-                    if (nx >= 0 && nx < static_cast<int>(width) &&
-                        ny >= 0 && ny < static_cast<int>(height))
+                    --left;
+                    visRow[left] = 1;
+                }
+                // Horizontal expansion: right
+                uint32_t right = sx;
+                while (right + 1 < width && !visRow[right + 1] && imgRow[right + 1] >= thresh)
+                {
+                    ++right;
+                    visRow[right] = 1;
+                }
+                for (uint32_t c = left; c <= right; ++c)
+                    visRow[c] = 1;
+
+                runs.push_back({sy, left, right});
+
+                uint32_t runLen = right - left + 1;
+                area += runLen;
+                if (area > maxArea) { overflow = true; break; }
+
+                if (left  < bMinX) bMinX = left;
+                if (right > bMaxX) bMaxX = right;
+                if (sy    < bMinY) bMinY = sy;
+                if (sy    > bMaxY) bMaxY = sy;
+
+                for (uint32_t c = left; c <= right; ++c)
+                {
+                    uint8_t v = imgRow[c];
+                    if (v < minIntensity) minIntensity = v;
+                }
+
+                // Vertical neighbor seeding
+                for (int dy = -1; dy <= 1; dy += 2)
+                {
+                    int ny = static_cast<int>(sy) + dy;
+                    if (ny < 0 || ny >= static_cast<int>(height)) continue;
+                    const uint8_t* nImgRow = imageData + static_cast<size_t>(ny) * width;
+                    uint8_t* nVisRow = visited.data() + static_cast<size_t>(ny) * width;
+                    for (uint32_t c = left; c <= right; ++c)
                     {
-                        uint32_t nidx = ny * width + nx;
-                        if (!visited[nidx] && imageData[nidx] >= threshold)
+                        if (!nVisRow[c] && nImgRow[c] >= thresh)
                         {
-                            visited[nidx] = true;
-                            stack.push_back({static_cast<uint32_t>(nx),
-                                             static_cast<uint32_t>(ny)});
+                            nVisRow[c] = 1;
+                            seedStack.push_back({c, static_cast<uint32_t>(ny)});
                         }
                     }
                 }
             }
 
+            // Drain remaining seeds if overflow
+            if (overflow)
+            {
+                while (!seedStack.empty())
+                {
+                    auto [sx, sy] = seedStack.back();
+                    seedStack.pop_back();
+                    const uint8_t* imgRow = imageData + static_cast<size_t>(sy) * width;
+                    uint8_t* visRow = visited.data() + static_cast<size_t>(sy) * width;
+                    uint32_t left = sx;
+                    while (left > 0 && !visRow[left - 1] && imgRow[left - 1] >= thresh)
+                    { --left; visRow[left] = 1; }
+                    uint32_t right = sx;
+                    while (right + 1 < width && !visRow[right + 1] && imgRow[right + 1] >= thresh)
+                    { ++right; visRow[right] = 1; }
+                    for (uint32_t c = left; c <= right; ++c) visRow[c] = 1;
+                    for (int dy = -1; dy <= 1; dy += 2)
+                    {
+                        int ny = static_cast<int>(sy) + dy;
+                        if (ny < 0 || ny >= static_cast<int>(height)) continue;
+                        const uint8_t* nImgRow = imageData + static_cast<size_t>(ny) * width;
+                        uint8_t* nVisRow = visited.data() + static_cast<size_t>(ny) * width;
+                        for (uint32_t c = left; c <= right; ++c)
+                        {
+                            if (!nVisRow[c] && nImgRow[c] >= thresh)
+                            {
+                                nVisRow[c] = 1;
+                                seedStack.push_back({c, static_cast<uint32_t>(ny)});
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
             // 面积过滤
-            uint32_t area = static_cast<uint32_t>(blobPixels.size());
-            if (area < minArea || area > maxArea)
+            if (area < minArea)
                 continue;
 
             // 边界框和长宽比过滤
-            uint32_t minX = UINT32_MAX, maxX = 0, minY = UINT32_MAX, maxY = 0;
-            for (const auto& p : blobPixels)
-            {
-                if (p.x < minX) minX = p.x;
-                if (p.x > maxX) maxX = p.x;
-                if (p.y < minY) minY = p.y;
-                if (p.y > maxY) maxY = p.y;
-            }
-            uint16_t bboxW = static_cast<uint16_t>(maxX - minX + 1);
-            uint16_t bboxH = static_cast<uint16_t>(maxY - minY + 1);
+            uint16_t bboxW = static_cast<uint16_t>(bMaxX - bMinX + 1);
+            uint16_t bboxH = static_cast<uint16_t>(bMaxY - bMinY + 1);
             float aspect = static_cast<float>(std::min(bboxW, bboxH)) /
                            static_cast<float>(std::max(bboxW, bboxH));
             if (aspect < minAspect)
                 continue;
 
             // ================================================================
-            // 步骤 2: 背景减除加权质心
-            // DLL 验证结果:
+            // 步骤 2: 背景减除加权质心 (single pass over RLE runs)
+            //
+            // 数值结果不变:
             //   - 使用像素中心坐标约定: (x+0.5, y+0.5)
             //   - 使用背景减除: weight = intensity - (minIntensity - kBgStep)
             //   - kBgStep = 2 (V3 8-bit 压缩的量化步长)
             //   - 验证精度: 平均 0.000388 px, 99.4% < 0.01 px
             // ================================================================
-            uint8_t minIntensity = 255;
-            for (const auto& p : blobPixels)
-            {
-                if (p.val < minIntensity) minIntensity = p.val;
-            }
-
             static constexpr double kPixelCenterOffset = 0.5;
             static constexpr double kBgStep = 2.0;
             double bgLevel = static_cast<double>(minIntensity) - kBgStep;
 
             double sumX = 0.0, sumY = 0.0, sumW = 0.0;
-            for (const auto& p : blobPixels)
+            for (const auto& run : runs)
             {
-                double weight = static_cast<double>(p.val) - bgLevel;
-                if (weight <= 0.0) weight = 0.0;
+                const uint8_t* imgRow = imageData + static_cast<size_t>(run.row) * width;
+                double rowCoord = run.row + kPixelCenterOffset;
+                for (uint32_t c = run.colStart; c <= run.colEnd; ++c)
+                {
+                    double weight = static_cast<double>(imgRow[c]) - bgLevel;
+                    if (weight <= 0.0) weight = 0.0;
 
-                sumX += (p.x + kPixelCenterOffset) * weight;
-                sumY += (p.y + kPixelCenterOffset) * weight;
-                sumW += weight;
+                    sumX += (c + kPixelCenterOffset) * weight;
+                    sumY += rowCoord * weight;
+                    sumW += weight;
+                }
             }
 
             if (sumW <= 0.0)
