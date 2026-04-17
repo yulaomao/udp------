@@ -1,0 +1,5 @@
+Starting logging on 2026-04-17 at 01:51:34
+Using SDK library version v4.10.1 (1743687540) Linux-5.15.0-1074-azure
+fusionTrack.cpp, line 502: falling back to default access level
+Using device layer library version v3.5.0 (1743687540) Linux-5.15.0-1074-azure
+thread.cpp, line 173: stopping endless loop
