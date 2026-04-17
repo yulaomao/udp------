@@ -502,10 +502,10 @@ double StereoVision::pointToReverseEpipolarDistance(
 // ---------------------------------------------------------------------------
 // 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
 //
-// 基于 Match2D3D.h 的汇编还原实现:
+// 基于 Match2D3D.h 的汇编还原, 并经 SDK dump 数据验证:
 //   1. 阈值筛选 (Match2D3D.h:615, epipolarMaxDistance)
-//   2. 最优候选选择 (Match2D3D.h:731, 距离最小)
-//   3. 双向交叉验证 (Match2D3D.h:837, 862)
+//   2. 双向验证 (前向+反向极线距离均在阈值内)
+//   3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
 //
 // 概率计算: probability = 1.0 / n_candidates (Match2D3D.h, ftkInterface.h:667)
 // ---------------------------------------------------------------------------

@@ -1531,10 +1531,10 @@ def verify_epipolar_matching(cal: Calibration,
                              raw_right: Dict[int, List[RawDetection]]) -> dict:
     """验证极线匹配 — 使用圆心提取结果执行完整匹配管线，与 SDK 结果对比。
 
-    实现 DLL Match2D3D 的三个关键步骤:
+    实现 DLL Match2D3D 的关键步骤:
       1. 阈值筛选 (epipolarMaxDistance)
-      2. 最优候选选择 (距离最小)
-      3. 双向交叉验证 (左→右 + 右→左)
+      2. 双向验证 (前向+反向极线距离均在阈值内)
+      3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
 
     对比指标:
       - 匹配对一致性 (left_idx, right_idx 是否与 SDK 相同)
@@ -1543,7 +1543,7 @@ def verify_epipolar_matching(cal: Calibration,
       - 概率值差异
     """
     print("\n" + "=" * 70)
-    print("验证 8：极线匹配（Match2D3D — 阈值+最优+双向交叉验证）")
+    print("验证 8：极线匹配（Match2D3D — 阈值+双向验证+全候选输出）")
     print("=" * 70)
 
     match_correct = 0

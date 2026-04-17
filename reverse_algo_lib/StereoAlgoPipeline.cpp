@@ -144,8 +144,7 @@ bool StereoAlgoPipeline::reproject(
 // 实现与 SDK 一致的极线匹配流程 (还原 DLL Match2D3D):
 //   1. 对每个左图点, 计算极线, 找所有右候选 (距离 < epipolarMaxDist)
 //   2. 双向验证: 反向极线距离也要在阈值内
-//   3. 所有通过验证的候选都产生 fiducial (允许一对多)
-//   4. probability = 1/n (n = 同一左图点的候选数)
+//   3. 所有通过验证的候选都产生 fiducial (允许一对多, probability=1/n)
 // ===========================================================================
 
 uint32_t StereoAlgoPipeline::matchAndTriangulate(
