@@ -1,0 +1,12 @@
+prefix=/home/atracsys/workspace/sdk_lin_build/soft.atr.meta.2cams.sdk/make/fTk/pub/x64/RelWithDebInfo/install
+exec_prefix=${prefix}
+libdir=/home/atracsys/workspace/sdk_lin_build/soft.atr.meta.2cams.sdk/make/fTk/pub/x64/RelWithDebInfo/install/lib
+includedir=/home/atracsys/workspace/sdk_lin_build/soft.atr.meta.2cams.sdk/make/fTk/pub/x64/RelWithDebInfo/install/include
+
+Name: benchmark
+Description: Google microbenchmark framework
+Version: 1.8.3
+
+Libs: -L${libdir} -lbenchmark
+Libs.private: -lpthread
+Cflags: -I${includedir}

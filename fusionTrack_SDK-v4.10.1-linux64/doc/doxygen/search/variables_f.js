@@ -1,0 +1,22 @@
+var searchData=
+[
+  ['rawdataleft',['rawDataLeft',['../d1/d3a/ftk_interface_8h.html#ab06a72bbf8dc5d17cc4eefd931067e92',1,'ftkFrameQuery']]],
+  ['rawdataleftcount',['rawDataLeftCount',['../d1/d3a/ftk_interface_8h.html#a8484b15ab340ec7bf4dab84a4386e18a',1,'ftkFrameQuery']]],
+  ['rawdataleftstat',['rawDataLeftStat',['../d1/d3a/ftk_interface_8h.html#a71d51998edeb23bbf67fa0ee83e0740e',1,'ftkFrameQuery']]],
+  ['rawdataleftversionsize',['rawDataLeftVersionSize',['../d1/d3a/ftk_interface_8h.html#a73c40b2d3c8b37b9cae45cd59977ce1e',1,'ftkFrameQuery']]],
+  ['rawdataright',['rawDataRight',['../d1/d3a/ftk_interface_8h.html#a25e33ace0c8099097262aee50496fa35',1,'ftkFrameQuery']]],
+  ['rawdatarightcount',['rawDataRightCount',['../d1/d3a/ftk_interface_8h.html#a65211f00ad381cbab693f9aa47784bf0',1,'ftkFrameQuery']]],
+  ['rawdatarightstat',['rawDataRightStat',['../d1/d3a/ftk_interface_8h.html#a4da424422cebb3587875f915976d5f6a',1,'ftkFrameQuery']]],
+  ['rawdatarightversionsize',['rawDataRightVersionSize',['../d1/d3a/ftk_interface_8h.html#a1b82e27732408f6dc9100db9cfe809de',1,'ftkFrameQuery']]],
+  ['rawvaluebutton0',['RawValueButton0',['../db/d20/group__event_s_d_k.html#afd1c014d5e2274c935a2f4e67bdb3308',1,'EvtActiveMarkerButtonRawValueV1Payload']]],
+  ['rawvaluebutton1',['RawValueButton1',['../db/d20/group__event_s_d_k.html#ae8cf0b45c41ca3d97e95f2564c02615b',1,'EvtActiveMarkerButtonRawValueV1Payload']]],
+  ['read',['read',['../d9/d77/ftk_options_8h.html#a326662a97fdc9daddfa543655ccbad33',1,'ftkOptionStatus']]],
+  ['referencevalue',['ReferenceValue',['../d6/d72/struct_evt_synthetic_temperatures_v1_payload.html#a7c9fe42fe8eab060803dcf4e2f9e270b',1,'EvtSyntheticTemperaturesV1Payload']]],
+  ['registrationerrormm',['registrationErrorMM',['../d1/d3a/ftk_interface_8h.html#a04cc90891d936a8e5ef4fdbe4c6f8df2',1,'ftkMarker::registrationErrorMM()'],['../d5/dd6/structftk_marker64_fiducials.html#a0beda0eee118cf55ef9b20403164623a',1,'ftkMarker64Fiducials::registrationErrorMM()']]],
+  ['reservedsize',['ReservedSize',['../db/d5f/structftk_version_size.html#a8dda456d74d3265c7bd14fe4b50da77b',1,'ftkVersionSize']]],
+  ['rightcamera',['RightCamera',['../d1/d3a/ftk_interface_8h.html#ac7a543f9eb777783b152007e5d47ba9c',1,'ftkStereoParameters']]],
+  ['rightedge',['RightEdge',['../d2/de0/structftk_status.html#a95ce3c82658ac89fb20ecafb9c6b0caf',1,'ftkStatus']]],
+  ['rightindex',['rightIndex',['../d1/d3a/ftk_interface_8h.html#ade63c1a28906e41421149f4a86dc7839',1,'ftk3DFiducial']]],
+  ['rightstrobeenabled',['RightStrobeEnabled',['../de/dfc/structftk_strobe_info.html#ac0ede187d86edb95a1cd477252868dd3',1,'ftkStrobeInfo']]],
+  ['rotation',['Rotation',['../d1/d3a/ftk_interface_8h.html#a0403af4c5bfafa96fcb7888d522dd6fc',1,'ftkStereoParameters::Rotation()'],['../d1/d3a/ftk_interface_8h.html#a66de8cc13133d9dbb92c2037e0834408',1,'ftkMarker::rotation()'],['../d5/dd6/structftk_marker64_fiducials.html#ab8cf6b11b076149d12afe83d63688664',1,'ftkMarker64Fiducials::rotation()']]]
+];

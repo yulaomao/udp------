@@ -1,0 +1,38 @@
+<deviceDescription>
+ <header>
+  <version>1</version>
+ </header>
+ <geometries>
+  <nbr>2</nbr>
+  <files>
+   <geometry id="0">
+    <file>geometryApex.ini</file>
+   </geometry>
+  </files>
+  <files>
+   <geometry id="1">
+    <file>geometryVertex0.ini</file>
+   </geometry>
+  </files>
+ </geometries>
+ <voxelConfiguration>
+  <file>segmentation500.xml</file>
+ </voxelConfiguration>
+ <symmetrise>
+  <rotation>0 0.10472 0</rotation>
+  <translation>210.0 0 -22.5</translation>
+ </symmetrise>
+ <tolerances>
+  <rms>Inf</rms>
+  <median>Inf</median>
+  <max>Inf</max>
+ </tolerances>
+ <recordEvents>
+  <nbr>200</nbr>
+ </recordEvents>
+  <signature>
+    <author>JLU</author>
+    <hash>7e19f3d</hash>
+    <timestamp>2021-09-29T12:09:56Z</timestamp>
+  </signature>
+</deviceDescription>

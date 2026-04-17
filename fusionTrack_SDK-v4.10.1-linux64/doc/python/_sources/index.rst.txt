@@ -1,0 +1,25 @@
+Atracsys SDK python wrapper
+============================
+
+Quick start guide
+-----------------
+
+The Atracsys SDK python wrapper lets you dig into the full fusionTrack or spryTrack API
+in python.
+
+For example, the x/y/z positions of every standard (geometry 1,2,3,4,5) markers seen
+by the tracker can live plotted with the following code:
+
+.. literalinclude:: example.py
+  :language: python
+
+API
+---
+
+.. automodule:: atracsys.ftk
+    :members:
+    :undoc-members:
+
+.. automodule:: _atracsys_ftk
+    :members:
+    :undoc-members:

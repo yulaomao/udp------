@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Server>
+    <Name>atracsys.com/_support/AtracsysDataExchange</Name>
+    <Port>0</Port>
+    <Protocol>https</Protocol>
+	<Timeout>500000</Timeout>	
+  </Server>
+  <Proxy>
+    <Url />
+    <User />
+    <Password />
+  </Proxy>
+</Configuration>

@@ -1,0 +1,163 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://git.atracsys.com/measurement/soft.atr.2cams.sdk/-/blob/master/dev/data/GeometryFileVersion2-schema.json",
+    "title": "Geometry file version 2",
+    "description": "A geometry file version 2 specification",
+    "type": "object",
+    "properties": {
+        "geometry": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 1,
+                    "exclusiveMaximum": 3
+                },
+                "id": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                },
+                "count": {
+                    "type": "integer",
+                    "exclusiveMinimum": 2,
+                    "exclusiveMaximum": 65
+                },
+                "divotCount": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 65
+                },
+                "angleOfRegistration": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 90
+                },
+                "allowedMissingFiducials": {
+                    "type": "integer"
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "version",
+                "id",
+                "count"
+            ]
+        },
+        "fiducials": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 64,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "position": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "items": {
+                            "type": "number"
+                        }
+                    },
+                    "normal": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "items": {
+                            "type": "number"
+                        }
+                    },
+                    "angleOfView": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "exclusiveMaximum": 90
+                    },
+                    "angleOfRegistration": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "exclusiveMaximum": 90
+                    },
+                    "fiducialType": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "position"
+            ]
+        },
+        "divots": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "position": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "items": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "position"
+                ]
+            }
+        },
+        "triangles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "integer",
+                    "exclusiveMinimum": -1
+                },
+                "uniqueItems": true
+            }
+        },
+        "submarkers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "usedFiducials": {
+                        "type": "array",
+                        "minItems": 4,
+                        "items": {
+                            "type": "integer",
+                            "exclusiveMinimum": -1
+                        },
+                        "uniqueItems": true
+                    },
+                    "usedTriangles": {
+                        "type": "array",
+                        "minItems": 2,
+                        "items": {
+                            "type": "integer",
+                            "exclusiveMinimum": -1
+                        },
+                        "uniqueItems": true
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "usedFiducials",
+                    "usedTriangles"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "geometry",
+        "fiducials"
+    ]
+}
