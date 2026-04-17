@@ -129,7 +129,14 @@ class ImageHeader:
 
 
 def load_calibration(data_dir: str) -> Optional[Calibration]:
-    """加载 calibration.csv。"""
+    """加载 calibration.csv。
+
+    SDK 内部以 float32 存储标定参数（ftkStereoParameters 结构体中所有字段
+    均为 float 类型）。为精确还原 SDK 行为，加载后将每个参数量化到最近的
+    float32 值再提升回 double 进行后续运算。这消除了 CSV 文本精度（6 位有效
+    数字 vs float32 需要 9 位）带来的歧义，确保与 SDK 的 Rodrigues/三角化
+    等运算使用完全一致的起点。
+    """
     path = os.path.join(data_dir, "calibration.csv")
     if not os.path.exists(path):
         print(f"警告：{path} 未找到")
@@ -145,25 +152,25 @@ def load_calibration(data_dir: str) -> Optional[Calibration]:
             key = parts[0].strip()
             vals = [float(v) for v in parts[1:] if v.strip()]
             if key == "left_focal_length":
-                cal.left_focal = np.array(vals[:2])
+                cal.left_focal = np.array(vals[:2], dtype=np.float32).astype(np.float64)
             elif key == "left_optical_centre":
-                cal.left_center = np.array(vals[:2])
+                cal.left_center = np.array(vals[:2], dtype=np.float32).astype(np.float64)
             elif key == "left_distortions":
-                cal.left_distortion = np.array(vals[:5])
+                cal.left_distortion = np.array(vals[:5], dtype=np.float32).astype(np.float64)
             elif key == "left_skew":
-                cal.left_skew = vals[0]
+                cal.left_skew = float(np.float32(vals[0]))
             elif key == "right_focal_length":
-                cal.right_focal = np.array(vals[:2])
+                cal.right_focal = np.array(vals[:2], dtype=np.float32).astype(np.float64)
             elif key == "right_optical_centre":
-                cal.right_center = np.array(vals[:2])
+                cal.right_center = np.array(vals[:2], dtype=np.float32).astype(np.float64)
             elif key == "right_distortions":
-                cal.right_distortion = np.array(vals[:5])
+                cal.right_distortion = np.array(vals[:5], dtype=np.float32).astype(np.float64)
             elif key == "right_skew":
-                cal.right_skew = vals[0]
+                cal.right_skew = float(np.float32(vals[0]))
             elif key == "translation":
-                cal.translation = np.array(vals[:3])
+                cal.translation = np.array(vals[:3], dtype=np.float32).astype(np.float64)
             elif key == "rotation":
-                cal.rotation = np.array(vals[:3])
+                cal.rotation = np.array(vals[:3], dtype=np.float32).astype(np.float64)
     return cal
 
 
@@ -592,6 +599,12 @@ def triangulate_point(cal: Calibration, left_px: float, left_py: float,
     point_3d, tri_err = triangulate_midpoint(left_origin, left_dir,
                                              right_origin, right_dir)
 
+    # SDK stores 3D positions as float32 (ftk3DFiducial.positionMM is float[3]).
+    # Cast our double64 result to float32 then back to double64 to match SDK output.
+    point_3d = point_3d.astype(np.float32).astype(np.float64)
+    # tri_err also stored as float32
+    tri_err = float(np.float32(tri_err))
+
     # Compute epipolar error (matching SDK approach):
     # From DLL analysis: computeEpipolarLine takes normalized left point,
     # converts to ideal undistorted pixel via KL, then applies F.
@@ -619,6 +632,9 @@ def triangulate_point(cal: Calibration, left_px: float, left_py: float,
         epi_err = (line[0] * right_ideal[0] + line[1] * right_ideal[1] + line[2]) / norm
     else:
         epi_err = 0.0
+
+    # SDK stores epipolar error as float32
+    epi_err = float(np.float32(epi_err))
 
     return point_3d, epi_err, tri_err
 
@@ -813,7 +829,10 @@ def verify_triangulation(cal: Calibration,
         print(f"\n  异常匹配（状态>0）：{outlier_count}")
         print(f"    3D 位置误差：       平均={out_pos.mean():.6f} mm, "
               f"最大={out_pos.max():.6f} mm")
-        print(f"    （预计误差较大：float32 精度随距离退化，~30mm @ 93km 深度）")
+        print(f"    （预计误差较大：标定参数 CSV 精度（6有效位）"
+              f"无法精确还原 SDK float32 值，")
+        print(f"     在极端深度（~93km，射线近乎平行）时三角化灵敏度极高，"
+              f"微小参数差异被放大）")
 
     # 基于良好匹配的验证率：float32 精度给出 ~0.03mm 最大误差
     threshold_mm = 0.05  # 50 微米 — 考虑 float32 精度

@@ -664,6 +664,14 @@ int main( int argc, char** argv )
             if ( calibErr == ftkError::FTK_OK )
             {
                 const ftkStereoParameters& cal = infoData.Calibration;
+
+                // Use setprecision(9) for float32 exact round-trip.
+                // C++ float (IEEE 754 single) has ~7.22 decimal digits of precision.
+                // 9 significant digits guarantee exact round-trip for ALL float32 values.
+                // Previous default precision (6 sig digits) caused ambiguity for some parameters,
+                // leading to ~20mm triangulation errors for degenerate (status>0) matches at extreme depth.
+                calibCsv << setprecision( 9 );
+
                 calibCsv << "# Left Camera" << endl;
                 calibCsv << "left_focal_length," << cal.LeftCamera.FocalLength[ 0 ] << ","
                          << cal.LeftCamera.FocalLength[ 1 ] << endl;

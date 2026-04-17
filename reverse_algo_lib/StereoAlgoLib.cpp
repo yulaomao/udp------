@@ -122,6 +122,29 @@ Mat3 StereoVision::rodrigues(double rx, double ry, double rz) {
 bool StereoVision::initialize(const StereoCalibration& cal) {
     m_cal = cal;
 
+    // SDK stores calibration as float32 (ftkStereoParameters/ftkCameraParameters
+    // use float fields). Round all parameters to nearest float32 to match SDK's
+    // internal representation. This ensures Rodrigues rotation, undistortion, and
+    // triangulation operate on identical starting values as the SDK.
+    auto f32 = [](double v) -> double { return static_cast<double>(static_cast<float>(v)); };
+
+    m_cal.leftCam.focalLength[0] = f32(m_cal.leftCam.focalLength[0]);
+    m_cal.leftCam.focalLength[1] = f32(m_cal.leftCam.focalLength[1]);
+    m_cal.leftCam.opticalCentre[0] = f32(m_cal.leftCam.opticalCentre[0]);
+    m_cal.leftCam.opticalCentre[1] = f32(m_cal.leftCam.opticalCentre[1]);
+    for (int i = 0; i < 5; ++i) m_cal.leftCam.distortion[i] = f32(m_cal.leftCam.distortion[i]);
+    m_cal.leftCam.skew = f32(m_cal.leftCam.skew);
+
+    m_cal.rightCam.focalLength[0] = f32(m_cal.rightCam.focalLength[0]);
+    m_cal.rightCam.focalLength[1] = f32(m_cal.rightCam.focalLength[1]);
+    m_cal.rightCam.opticalCentre[0] = f32(m_cal.rightCam.opticalCentre[0]);
+    m_cal.rightCam.opticalCentre[1] = f32(m_cal.rightCam.opticalCentre[1]);
+    for (int i = 0; i < 5; ++i) m_cal.rightCam.distortion[i] = f32(m_cal.rightCam.distortion[i]);
+    m_cal.rightCam.skew = f32(m_cal.rightCam.skew);
+
+    for (int i = 0; i < 3; ++i) m_cal.translation[i] = f32(m_cal.translation[i]);
+    for (int i = 0; i < 3; ++i) m_cal.rotation[i] = f32(m_cal.rotation[i]);
+
     // Rodrigues → 旋转矩阵
     m_R = rodrigues(cal.rotation[0], cal.rotation[1], cal.rotation[2]);
     m_Rt = m_R.transpose();
@@ -377,13 +400,20 @@ TriangulationResult StereoVision::triangulatePoint(
     double triErr = 0.0;
     Vec3 pos3d = closestPointOnRays(leftOrigin, leftDir, rightOrigin, rightDir, triErr);
 
+    // SDK stores results as float32 (ftk3DFiducial.positionMM is float[3],
+    // epipolarErrorPixels and triangulationErrorMM are float).
+    // Cast to float then back to double to match SDK output precision.
+    pos3d.x = static_cast<double>(static_cast<float>(pos3d.x));
+    pos3d.y = static_cast<double>(static_cast<float>(pos3d.y));
+    pos3d.z = static_cast<double>(static_cast<float>(pos3d.z));
+
     // 极线误差 (Fix 2): 在无畸变理想像素空间
     Vec3 line = computeEpipolarLine(lnorm.x, lnorm.y);
     double epiErr = pointToEpipolarDistance(rnorm.x, rnorm.y, line);
 
     result.position = pos3d;
-    result.epipolarError = epiErr;
-    result.triangulationError = triErr;
+    result.epipolarError = static_cast<double>(static_cast<float>(epiErr));
+    result.triangulationError = static_cast<double>(static_cast<float>(triErr));
     result.success = true;
     return result;
 }
