@@ -1,5 +1,5 @@
 // ===========================================================================
-// StereoAlgoPipeline.h — 基于 StereoAlgoLib 的 SDK 兼容接口封装
+// StereoAlgoPipeline.h - 基于 StereoAlgoLib 的 SDK 兼容接口封装
 //
 // 将 stereo_algo::StereoVision 封装为与 SDK 类型 (ftkXxx) 兼容的管线接口，
 // 方便被 stereo99_CompareAlgorithms.cpp 直接调用。
@@ -24,7 +24,7 @@
 namespace stereo_algo {
 
 // ===========================================================================
-// StereoAlgoPipeline — SDK 兼容管线封装
+// StereoAlgoPipeline - SDK 兼容管线封装
 // ===========================================================================
 
 class StereoAlgoPipeline
@@ -44,17 +44,17 @@ public:
     bool isInitialized() const;
 
     // ------------------------------------------------------------------
-    // 核心算法 — 与 SDK API 对应
+    // 核心算法 - 与 SDK API 对应
     // ------------------------------------------------------------------
 
-    /// 单点三角化 — 等价于 ftkTriangulate
+    /// 单点三角化 - 等价于 ftkTriangulate
     bool triangulate(const ftk3DPoint& leftPixel,
                      const ftk3DPoint& rightPixel,
                      ftk3DPoint* outPoint,
                      float* outEpipolarError = nullptr,
                      float* outTriangulationError = nullptr) const;
 
-    /// 重投影 — 等价于 ftkReprojectPoint
+    /// 重投影 - 等价于 ftkReprojectPoint
     bool reproject(const ftk3DPoint& point3D,
                    ftk3DPoint* outLeft,
                    ftk3DPoint* outRight) const;

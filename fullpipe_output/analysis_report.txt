@@ -1,0 +1,81 @@
+============================================================
+ Full Pipeline Comparison Report
+ Reverse-Engineered Algorithm vs SDK
+============================================================
+
+Report generated: 2026-04-17 19:38:19
+Library version:  stereo_algo v2.0.0 (2026-04, based on verify_reverse_engineered.py)
+Total frames:     10
+Anomalous frames: 0 (0.0%)
+
+Thresholds:
+  Centroid:      1.0 px
+  3D Position:   0.5 mm
+  Epipolar:      0.1 px
+  Marker trans:  1.0 mm
+  Marker rot:    0.5 deg
+  KeepRejected:  ON (rejected points excluded from comparison)
+
+=== Step 1: Circle Centroid Detection (Image -> Blobs) ===
+  Blob count diff (ours - SDK):
+    Left:  mean=0.00 max=0.00 std=0.00
+    Right: mean=0.40 max=3.00 std=0.92
+  Centroid match (by area):
+    Matched:    215
+    Unmatched:  0
+    Dist mean:  0.000089 px
+    Dist max:   0.003289 px
+    Dist std:   0.000423 px
+    <0.01px rate: 100.0%
+
+=== Step 2: Epipolar Matching + Triangulation ===
+  Fiducial count diff (SDK - ours, per frame):
+    Mean: -0.10
+    Max:  0.00
+    Exact match: 9 / 10 frames
+  Matched fiducials: 101
+  3D pos diff:  mean=0.000624 max=0.014692 std=0.001963 mm
+  Epi err diff: mean=0.000110 max=0.001990 std=0.000317 px
+  Tri err diff: mean=0.000100 max=0.001605 std=0.000265 mm
+
+=== Step 3: Tool Recognition (KEY MONITORING) ===
+  Marker count match (frames):    10
+  Marker count mismatch (frames):  0
+  GeomID match (markers):          5
+  GeomID mismatch (markers):       0
+
+  *** SDK detected, we did NOT:    0 frames ***
+  *** We detected, SDK did NOT:    0 frames ***
+
+  Translation diff: mean=0.0010 max=0.0035 std=0.0013 mm
+  Rotation diff:    mean=0.0097 max=0.0152 std=0.0056 deg
+  RegError diff:    mean=0.014589 max=0.016237 std=0.001907 mm
+  Matched markers:  5
+
+=== Timing Statistics ===
+  Full pipeline (per frame):
+    Total:     mean=3611725.7 max=4020585.7 us (3611.73 ms)
+  Breakdown:
+    Detect:    mean=3611337.0 max=4019984.8 us
+    Match+Tri: mean=79.3 max=96.6 us
+    Markers:   mean=157.8 max=313.4 us
+  Total time (all frames):
+    Pipeline: 36117 ms
+    Detect:   36113 ms
+    Match:    1 ms
+    Markers:  2 ms
+  Estimated throughput: 0.3 fps
+
+=== Conclusion ===
+  PASS: Full pipeline matches SDK output within thresholds.
+
+  Output files:
+    centroid_comparison.csv   - Centroid detection comparison
+    fiducial_comparison.csv   - Fiducial matching comparison
+    marker_comparison.csv     - Marker identification comparison (KEY)
+    frame_summary.csv         - Per-frame summary
+    timing_summary.csv        - Per-frame timing breakdown
+    anomaly_images/           - Anomalous frame images (PGM)
+    analysis_report.txt       - This report
+
+============================================================

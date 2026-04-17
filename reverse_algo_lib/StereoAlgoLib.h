@@ -1,5 +1,5 @@
 // ===========================================================================
-// StereoAlgoLib.h — 独立逆向工程双目视觉算法库
+// StereoAlgoLib.h - 独立逆向工程双目视觉算法库
 //
 // 基于 verify_reverse_engineered.py 中验证通过的算法实现
 // + libfusionTrack64.so 反汇编分析优化
@@ -37,7 +37,7 @@
 namespace stereo_algo {
 
 // ===========================================================================
-// 基础数据结构 — 独立于 SDK 的轻量级类型
+// 基础数据结构 - 独立于 SDK 的轻量级类型
 // ===========================================================================
 
 /// 2D 向量
@@ -92,7 +92,7 @@ struct Mat3 {
 };
 
 // ===========================================================================
-// 标定参数 — 与 SDK 的 ftkCameraParameters / ftkStereoParameters 对应
+// 标定参数 - 与 SDK 的 ftkCameraParameters / ftkStereoParameters 对应
 // ===========================================================================
 
 /// 单相机内参
@@ -156,7 +156,7 @@ struct RegistrationResult {
 };
 
 // ===========================================================================
-// 极线匹配结果 — 单个匹配对
+// 极线匹配结果 - 单个匹配对
 // ===========================================================================
 
 struct EpipolarMatchResult {
@@ -169,7 +169,7 @@ struct EpipolarMatchResult {
 };
 
 // ===========================================================================
-// 2D 检测点输入 — 用于极线匹配
+// 2D 检测点输入 - 用于极线匹配
 // ===========================================================================
 
 struct Detection2D {
@@ -179,7 +179,7 @@ struct Detection2D {
 };
 
 // ===========================================================================
-// StereoVision — 核心算法引擎
+// StereoVision - 核心算法引擎
 // ===========================================================================
 
 class StereoVision {
@@ -210,7 +210,7 @@ public:
     /// @return 重投影结果
     ReprojectionResult reprojectTo2D(const Vec3& pos3d) const;
 
-    /// 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
+    /// 极线匹配+三角化 - 还原 DLL Match2D3D 完整管线
     ///
     /// 通过 libfusionTrack64.so 反汇编还原 (_findRightEpipolarMatch):
     ///   1. 阈值筛选: |前向极线距离| < epipolarMaxDistance (仅前向)
@@ -234,22 +234,22 @@ public:
         EpipolarMatchResult* outResults, uint32_t maxResults,
         double epipolarMaxDistance = 5.0) const;
 
-    /// 计算反向极线 (F^T * right_ideal_pixel) — 用于右→左交叉验证
+    /// 计算反向极线 (F^T * right_ideal_pixel) - 用于右->左交叉验证
     Vec3 computeReverseEpipolarLine(double rightNormX, double rightNormY) const;
 
-    /// 点到左图极线距离 (反向) — 使用 K_L 变换
+    /// 点到左图极线距离 (反向) - 使用 K_L 变换
     double pointToReverseEpipolarDistance(double leftNormX, double leftNormY,
                                           const Vec3& epipolarLine) const;
 
     // ------------------------------------------------------------------
-    // 低级算法 — 对外暴露以便测试和对比
+    // 低级算法 - 对外暴露以便测试和对比
     // ------------------------------------------------------------------
 
-    /// 去畸变: 像素坐标 → 归一化坐标 (迭代 Brown-Conrady, 20次)
+    /// 去畸变: 像素坐标 -> 归一化坐标 (迭代 Brown-Conrady, 20次)
     Vec2 undistortPoint(double px, double py,
                         const CameraIntrinsics& cam) const;
 
-    /// 加畸变: 归一化坐标 → 像素坐标 (正向 Brown-Conrady)
+    /// 加畸变: 归一化坐标 -> 像素坐标 (正向 Brown-Conrady)
     Vec2 distortPoint(double xn, double yn,
                       const CameraIntrinsics& cam) const;
 
@@ -303,7 +303,7 @@ public:
     // 辅助
     // ------------------------------------------------------------------
 
-    /// Rodrigues 向量 → 旋转矩阵
+    /// Rodrigues 向量 -> 旋转矩阵
     static Mat3 rodrigues(double rx, double ry, double rz);
 
     /// 获取标定参数
