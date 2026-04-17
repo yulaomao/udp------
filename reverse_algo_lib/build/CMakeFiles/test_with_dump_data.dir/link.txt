@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/test_with_dump_data.dir/link.d CMakeFiles/test_with_dump_data.dir/test_with_dump_data.cpp.o -o test_with_dump_data  libstereo_algo.a

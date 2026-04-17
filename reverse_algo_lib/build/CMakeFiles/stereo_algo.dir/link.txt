@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstereo_algo.a CMakeFiles/stereo_algo.dir/StereoAlgoLib.cpp.o
+/usr/bin/ranlib libstereo_algo.a
