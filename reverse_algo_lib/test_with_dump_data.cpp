@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <climits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -566,6 +567,208 @@ int main(int argc, char** argv) {
         bool pass = s.maxVal < 0.001;
         cout << "  Result: " << (pass ? "PASS" : "FAIL") << endl << endl;
         if (!pass) allPass = false;
+    }
+
+    // ===================================================================
+    // TEST 5: 圆心拟合误差 (Circle centroid detection from PGM images)
+    //
+    // 验证方法: 直接从 PGM 图像执行背景减除加权质心检测，
+    // 与 SDK 导出的 raw_data_left/right.csv 直接比较。
+    //
+    // 算法要点 (来自 verify_reverse_engineered.py):
+    //   1. 像素中心坐标约定: (x+0.5, y+0.5)
+    //   2. 背景减除: weight = intensity - (minIntensity - 2)
+    // ===================================================================
+    cout << "==== TEST 5: Circle Centroid Detection (Image vs SDK) ====" << endl;
+    {
+        // PGM loader
+        auto loadPGM = [](const string& path, int& w, int& h) -> vector<uint8_t> {
+            ifstream f(path, ios::binary);
+            if (!f.is_open()) return {};
+            string magic;
+            f >> magic;
+            if (magic != "P5") return {};
+            // skip comments
+            char c;
+            f.get(c); // consume space/newline after magic
+            while (f.peek() == '#') {
+                string comment;
+                getline(f, comment);
+            }
+            f >> w >> h;
+            int maxval;
+            f >> maxval;
+            f.get(c); // consume single whitespace after maxval
+            vector<uint8_t> data(w * h);
+            f.read(reinterpret_cast<char*>(data.data()), w * h);
+            if (f.gcount() < w * h) return {};
+            return data;
+        };
+
+        // Blob segmentation (4-connected flood fill)
+        struct Blob {
+            map<pair<int,int>, int> pixels; // (x,y) → intensity
+        };
+
+        auto segmentBlobs = [](const vector<uint8_t>& img, int w, int h,
+                               int threshold, int minArea, int maxArea) -> vector<Blob> {
+            vector<bool> visited(w * h, false);
+            vector<Blob> blobs;
+
+            for (int y = 0; y < h; ++y) {
+                for (int x = 0; x < w; ++x) {
+                    int idx = y * w + x;
+                    if (visited[idx] || img[idx] < threshold) {
+                        visited[idx] = true;
+                        continue;
+                    }
+                    // Flood fill
+                    Blob blob;
+                    vector<pair<int,int>> stack;
+                    stack.push_back({x, y});
+                    visited[idx] = true;
+                    while (!stack.empty()) {
+                        auto [cx, cy] = stack.back();
+                        stack.pop_back();
+                        blob.pixels[{cx, cy}] = img[cy * w + cx];
+                        int dx[] = {-1, 1, 0, 0};
+                        int dy[] = {0, 0, -1, 1};
+                        for (int d = 0; d < 4; ++d) {
+                            int nx = cx + dx[d], ny = cy + dy[d];
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                                int ni = ny * w + nx;
+                                if (!visited[ni] && img[ni] >= threshold) {
+                                    visited[ni] = true;
+                                    stack.push_back({nx, ny});
+                                }
+                            }
+                        }
+                    }
+                    int area = static_cast<int>(blob.pixels.size());
+                    if (area >= minArea && area <= maxArea) {
+                        // Aspect ratio check
+                        int minX = INT_MAX, maxX = 0, minY = INT_MAX, maxY = 0;
+                        for (auto& kv : blob.pixels) {
+                            minX = min(minX, kv.first.first);
+                            maxX = max(maxX, kv.first.first);
+                            minY = min(minY, kv.first.second);
+                            maxY = max(maxY, kv.first.second);
+                        }
+                        int bw = maxX - minX + 1, bh = maxY - minY + 1;
+                        double aspect = (bw > 0 && bh > 0) ?
+                            static_cast<double>(min(bw, bh)) / max(bw, bh) : 0.0;
+                        if (aspect >= 0.3)
+                            blobs.push_back(move(blob));
+                    }
+                }
+            }
+            return blobs;
+        };
+
+        // Background-subtracted weighted centroid (+0.5 pixel center convention)
+        auto bgSubtractedCentroid = [](const Blob& blob, double offset, double bgStep)
+                -> pair<double, double> {
+            int minVal = INT_MAX;
+            for (auto& kv : blob.pixels)
+                minVal = min(minVal, kv.second);
+            double bg = static_cast<double>(minVal) - bgStep;
+            double sx = 0, sy = 0, sw = 0;
+            for (auto& kv : blob.pixels) {
+                double w = static_cast<double>(kv.second) - bg;
+                if (w > 0) {
+                    sx += (kv.first.first + offset) * w;
+                    sy += (kv.first.second + offset) * w;
+                    sw += w;
+                }
+            }
+            if (sw > 0) return {sx / sw, sy / sw};
+            int n = static_cast<int>(blob.pixels.size());
+            double ax = 0, ay = 0;
+            for (auto& kv : blob.pixels) {
+                ax += kv.first.first + offset;
+                ay += kv.first.second + offset;
+            }
+            return {ax / n, ay / n};
+        };
+
+        vector<double> leftCentroidErrs, rightCentroidErrs;
+        int framesProcessed = 0;
+
+        struct SideData {
+            const char* name;
+            map<int, vector<RawDet>>& rawDets;
+            vector<double>& errors;
+        };
+
+        SideData sides[] = {
+            {"left",  rawLeft,  leftCentroidErrs},
+            {"right", rawRight, rightCentroidErrs}
+        };
+
+        for (auto& side : sides) {
+            for (auto& [frameIdx, sdkDets] : side.rawDets) {
+                // Build PGM path
+                char fname[256];
+                snprintf(fname, sizeof(fname), "%s/frame_%04d_%s.pgm",
+                         dataDir.c_str(), frameIdx, side.name);
+
+                int w = 0, h = 0;
+                auto img = loadPGM(fname, w, h);
+                if (img.empty()) continue;
+
+                auto blobs = segmentBlobs(img, w, h, 10, 4, 10000);
+
+                // Match SDK detections with our blobs by pixel count
+                for (auto& sdkDet : sdkDets) {
+                    double bestDist = 1e9;
+                    for (auto& blob : blobs) {
+                        if (static_cast<int>(blob.pixels.size()) != sdkDet.pixelCount)
+                            continue;
+                        auto [cx, cy] = bgSubtractedCentroid(blob, 0.5, 2.0);
+                        double dist = sqrt(pow(cx - sdkDet.cx, 2) +
+                                           pow(cy - sdkDet.cy, 2));
+                        if (dist < bestDist)
+                            bestDist = dist;
+                    }
+                    if (bestDist < 10.0) {
+                        side.errors.push_back(bestDist);
+                    }
+                }
+                framesProcessed++;
+            }
+        }
+
+        if (!leftCentroidErrs.empty() || !rightCentroidErrs.empty()) {
+            auto ls = computeStats(leftCentroidErrs);
+            auto rs = computeStats(rightCentroidErrs);
+
+            cout << "  Frames processed: " << framesProcessed << endl;
+            cout << "  Left matched:  " << ls.count << endl;
+            cout << "  Right matched: " << rs.count << endl;
+            cout << "  Left centroid err:  mean=" << fixed << setprecision(6)
+                 << ls.mean << " max=" << ls.maxVal
+                 << " std=" << ls.stddev << " px" << endl;
+            cout << "  Right centroid err: mean=" << rs.mean
+                 << " max=" << rs.maxVal
+                 << " std=" << rs.stddev << " px" << endl;
+
+            // Compute combined <0.01px pass rate
+            size_t totalMatch = leftCentroidErrs.size() + rightCentroidErrs.size();
+            size_t passCount = 0;
+            for (auto e : leftCentroidErrs) if (e < 0.01) passCount++;
+            for (auto e : rightCentroidErrs) if (e < 0.01) passCount++;
+            double passRate = (totalMatch > 0)
+                ? 100.0 * passCount / totalMatch : 0.0;
+
+            cout << "  <0.01px pass rate: " << fixed << setprecision(1) << passRate << "%" << endl;
+
+            bool pass = passRate > 95.0;
+            cout << "  Result: " << (pass ? "PASS" : "FAIL") << endl;
+            if (!pass) allPass = false;
+        } else {
+            cout << "  No PGM images found — skipping circle centroid test." << endl;
+        }
+        cout << endl;
     }
 
     // ===================================================================
