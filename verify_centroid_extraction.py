@@ -434,7 +434,9 @@ def circle_fit_givens(edge_x, edge_y, edge_w=None, use_weights=True,
                 norm = stable_hypot(a, b)
                 inv_norm = 1.0 / norm
                 gc = a * inv_norm   # cos(θ)
-                gs = b * inv_norm   # sin(θ) — 标准 Givens
+                # 修正: 原始 CircleFitting.h 使用 gs = -b/norm (第126行),
+                # 但标准 Givens 旋转应为 gs = b/norm。详见报告 §5.1.1。
+                gs = b * inv_norm   # sin(θ) — 标准 Givens (修正自 CircleFitting.h)
 
                 # 应用旋转: [gc, gs; -gs, gc] × [R[j]; row]
                 for k in range(j, 4):
@@ -854,11 +856,11 @@ def main():
 
             # 打印简要结果
             for d in dists:
+                scipy_part = ""
+                if d['givens_w_vs_scipy'] is not None:
+                    scipy_part = f", Givens(W)↔Scipy={d['givens_w_vs_scipy']:.6f}px"
                 print(f"  Blob {d['blob_id']}: area={d['area']}, "
-                      f"加权↔Givens(W)={d['weighted_vs_givens_w']:.4f}px, "
-                      f"Givens(W)↔Scipy={d['givens_w_vs_scipy']:.6f}px" if d['givens_w_vs_scipy'] is not None
-                      else f"  Blob {d['blob_id']}: area={d['area']}, "
-                      f"加权↔Givens(W)={d['weighted_vs_givens_w']:.4f}px")
+                      f"加权↔Givens(W)={d['weighted_vs_givens_w']:.4f}px{scipy_part}")
 
     # ─── 步骤4: 生成报告 ─────────────────────────────────
     print(f"\n步骤 4/4: 生成报告...")
