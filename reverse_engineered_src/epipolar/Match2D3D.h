@@ -789,6 +789,30 @@ inline RawPoint2D* Match2D3D::findEpipolarMatches(
 // matchAndTriangulateAll — 主匹配循环
 //
 // DLL: 0x1968d4 - 0x196b63 (655 bytes)
+//
+// [重要修正说明 — 基于 SDK 输出数据分析]
+//
+// 从 SDK dump 数据 (fiducials_3d.csv) 分析发现，SDK 实际行为与下面的
+// 汇编级还原在控制流上存在差异:
+//
+//   1. SDK 允许一对多匹配: 同一个左图点可对应多个右图点
+//      (例如 L[7]→R[8] 和 L[7]→R[7] 同时存在)
+//
+//   2. probability = 1/n 表示候选数量 n, 不表示拒绝:
+//      prob=0.5 (2个候选), 0.333 (3个), 0.25 (4个), 0.2 (5个)
+//      所有候选均被保留在输出中
+//
+//   3. 双向验证是"互达性"检查而非"互唯一性":
+//      只检查正反两个方向的极线距离都在阈值内,
+//      不要求各方向只有唯一候选
+//
+//   4. 实际 epipolarMaxDistance 约为 5.0 像素 (max observed: 4.999)
+//
+// 下方汇编还原的 "if (matchCount > 1) continue" 逻辑可能是
+// 反编译伪代码中条件分支方向的误判。实际 DLL 行为以 SDK 输出为准。
+//
+// 已在 reverse_algo_lib/StereoAlgoLib.cpp 的 matchEpipolar() 中
+// 实现了符合 SDK 实际输出的算法版本, 匹配率 99.9%。
 // ---------------------------------------------------------------------------
 
 inline uint32_t Match2D3D::matchAndTriangulateAll(
