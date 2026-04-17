@@ -7,7 +7,7 @@
 //   1. 连接 fusionTrack 设备，逐帧获取数据
 //   2. 对每帧数据:
 //      a) 调用 SDK 原生 API (ftkTriangulate / ftkReprojectPoint) 获取结果
-//      b) 调用逆向工程封装 (ReverseEngineeredPipeline) 计算同样结果
+//      b) 调用逆向工程封装 (StereoAlgoPipeline) 计算同样结果
 //      c) 对比两者的差异 (3D坐标、极线误差、三角化误差、重投影像素差)
 //      d) 统计执行时间
 //   3. 实时打印差异摘要
@@ -16,7 +16,7 @@
 //
 //   编译:
 //     确保 include path 包含 fusionTrack SDK 的 include 目录以及
-//     reverse_engineered_src 目录
+//     reverse_algo_lib 目录
 //
 //   用法:
 //     stereo99_CompareAlgorithms -g geometry072.ini [-c config.json]
@@ -28,8 +28,8 @@
 #include "geometryHelper.hpp"
 #include "helpers.hpp"
 
-// 逆向工程算法封装
-#include "ReverseEngineeredPipeline.h"
+// 逆向工程算法封装 (新版: 基于 verify_reverse_engineered.py 验证通过的算法)
+#include "StereoAlgoPipeline.h"
 
 #include <algorithm>
 #include <chrono>
@@ -232,7 +232,7 @@ int main( int argc, char** argv )
     cout << "=== stereo99_CompareAlgorithms ===" << endl;
     cout << "SDK vs Reverse-Engineered Algorithm Comparison Tool" << endl;
     cout << "Reverse-Engineered Pipeline: "
-         << reverse_engineered::ReverseEngineeredPipeline::version() << endl;
+         << stereo_algo::StereoAlgoPipeline::version() << endl;
 
     deque< string > args;
     for ( int i( 1 ); i < argc; ++i )
@@ -481,7 +481,7 @@ int main( int argc, char** argv )
     // Initialize reverse-engineered pipeline (will be initialized after
     // calibration is extracted from first frame)
 
-    reverse_engineered::ReverseEngineeredPipeline revPipeline;
+    stereo_algo::StereoAlgoPipeline revPipeline;
     bool revInitialized = false;
 
     // Register geometry with reverse-engineered pipeline's marker matcher
@@ -1187,7 +1187,7 @@ int main( int argc, char** argv )
         strftime( timeBuf, sizeof( timeBuf ), "%Y-%m-%d %H:%M:%S", localtime( &now ) );
         out << "Report generated: " << timeBuf << endl;
         out << "Pipeline version: "
-            << reverse_engineered::ReverseEngineeredPipeline::version() << endl;
+            << stereo_algo::StereoAlgoPipeline::version() << endl;
         out << "Total frames captured: " << capturedFrames << endl;
         out << "Total fiducial samples: " << globalStats.totalSamples << endl;
         out << "Anomalous samples: " << globalStats.anomalyCount
