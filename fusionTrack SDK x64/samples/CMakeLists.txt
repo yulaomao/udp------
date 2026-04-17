@@ -186,3 +186,43 @@ target_link_libraries(ftk35_PTPBasic Atracsys::SDK)
 target_link_libraries(ftk36_TaggerModes Atracsys::SDK)
 target_link_libraries(ftk99_DumpAllData Atracsys::SDK)
 target_link_libraries(atnetExecutable Atracsys::Atnet)
+
+# ===========================================================================
+# stereo99_CompareAlgorithms — 使用 stereo_algo 逆向算法库对比 SDK
+# ===========================================================================
+
+# 引入 reverse_algo_lib (stereo_algo 核心库 + SDK 兼容封装)
+set(REVERSE_ALGO_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../reverse_algo_lib")
+if(EXISTS "${REVERSE_ALGO_LIB_DIR}/StereoAlgoLib.cpp")
+    # 直接添加源文件编译 (避免 add_subdirectory 路径问题)
+    add_library(stereo_algo_for_samples STATIC
+        "${REVERSE_ALGO_LIB_DIR}/StereoAlgoLib.cpp"
+        "${REVERSE_ALGO_LIB_DIR}/StereoAlgoPipeline.cpp"
+    )
+    target_include_directories(stereo_algo_for_samples PUBLIC
+        "${REVERSE_ALGO_LIB_DIR}"
+        "${ATRACSYS_SDK_INSTALL_PATH}/include"
+    )
+    set_target_properties(stereo_algo_for_samples PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    add_executable(ftk99_CompareAlgorithms
+        "${ATRACSYS_SDK_INSTALL_PATH}/samples/stereo99_CompareAlgorithms.cpp"
+        ${api_SRCS} ${additional_SRCS})
+    target_include_directories(ftk99_CompareAlgorithms PRIVATE
+        "${REVERSE_ALGO_LIB_DIR}"
+    )
+    set_target_properties(ftk99_CompareAlgorithms PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+    target_link_libraries(ftk99_CompareAlgorithms
+        Atracsys::SDK
+        stereo_algo_for_samples
+    )
+    message(STATUS "ftk99_CompareAlgorithms: enabled with stereo_algo from ${REVERSE_ALGO_LIB_DIR}")
+else()
+    message(WARNING "ftk99_CompareAlgorithms: reverse_algo_lib not found at ${REVERSE_ALGO_LIB_DIR}, skipping")
+endif()
