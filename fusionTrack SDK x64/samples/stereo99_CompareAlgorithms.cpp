@@ -206,7 +206,7 @@ int main( int argc, char** argv )
              << "Reprojection diff threshold (px), default = 0.05" << endl;
     }
 
-    cout << "Copyright (c) Atracsys LLC 2003-2021" << endl;
+    cout << "Reverse-engineered comparison tool (2026)" << endl;
     if ( showHelp )
     {
 #ifdef ATR_WIN
