@@ -208,10 +208,11 @@ class CircleFitting
 {
 public:
     /// 边缘点结构（与DLL中偏移+0x20处的数组对应）
+    /// 注意: x/y 坐标使用像素中心约定，即像素 (col, row) 的坐标为 (col+0.5, row+0.5)
     struct EdgePoint
     {
-        double x;           ///< +0x00: 像素x坐标
-        double y;           ///< +0x08: 像素y坐标
+        double x;           ///< +0x00: 像素x坐标 (使用像素中心约定: col + 0.5)
+        double y;           ///< +0x08: 像素y坐标 (使用像素中心约定: row + 0.5)
         double z;           ///< +0x10: 扩展坐标（通常为0）
         double weight;      ///< +0x18: 像素权重（亮度值）
         double distance;    ///< +0x20: 到圆心距离（迭代中更新）

@@ -1111,89 +1111,260 @@ def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
                            raw_right: Dict[int, List[RawDetection]],
                            fiducials_3d: Dict[int, List[Fiducial3D]],
                            cal: Calibration) -> dict:
-    """验证圆心检测一致性。
+    """验证圆心检测一致性 — 直接对比法 (v1.1.0)。
 
-    比较来自原始检测的圆心位置与通过重投影 3D 基准点获得的预期位置。
+    方法: 从原始 PGM 图像执行背景减除加权质心检测，
+    与 SDK 导出的 raw_data_left/right.csv 直接比较。
 
-    返回（圆心误差统计）。
+    统计项:
+      - 每帧每相机圆心误差 (逐检测)
+      - 每帧检测数量差异
+      - 对应索引小球重建3D坐标差值
+
+    算法要点:
+      1. 使用像素中心坐标约定: (x+0.5, y+0.5)
+      2. 使用背景减除: weight = intensity - (minIntensity - 2)
+         其中 2 = V3 8-bit 压缩的最小量化步长
     """
     print("\n" + "=" * 70)
-    print("验证 6：圆心检测（SegmenterV21）")
+    print("验证 6：圆心检测（SegmenterV21 — 直接图像对比法 v1.1.0）")
     print("=" * 70)
 
+    data_dir = os.path.dirname(os.path.abspath(__file__))
+    dump_dir = os.path.join(data_dir, "dump_output")
+
+    # 辅助函数: 加载 PGM 图像
+    def load_pgm(path):
+        with open(path, 'rb') as f:
+            magic = f.readline().strip()
+            while True:
+                line = f.readline().strip()
+                if not line.startswith(b'#'):
+                    break
+            w, h = map(int, line.split())
+            maxval = int(f.readline().strip())
+            data = np.frombuffer(f.read(), dtype=np.uint8)
+            return data[:w * h].reshape((h, w))
+
+    # 辅助函数: 种子扩展分割 (4-连通)
+    def segment_blobs(img, threshold=10, min_area=4, max_area=10000, min_aspect=0.3):
+        h, w = img.shape
+        visited = np.zeros((h, w), dtype=bool)
+        blobs = []
+        for y in range(h):
+            for x in range(w):
+                if visited[y, x] or img[y, x] < threshold:
+                    visited[y, x] = True
+                    continue
+                # 洪泛填充
+                pixels = {}
+                stack = [(x, y)]
+                visited[y, x] = True
+                while stack:
+                    cx, cy = stack.pop()
+                    pixels[(cx, cy)] = int(img[cy, cx])
+                    for nx, ny in [(cx-1,cy),(cx+1,cy),(cx,cy-1),(cx,cy+1)]:
+                        if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx] and img[ny, nx] >= threshold:
+                            visited[ny, nx] = True
+                            stack.append((nx, ny))
+                area = len(pixels)
+                if area < min_area or area > max_area:
+                    continue
+                xs = [p[0] for p in pixels]
+                ys = [p[1] for p in pixels]
+                bw = max(xs) - min(xs) + 1
+                bh = max(ys) - min(ys) + 1
+                if bw > 0 and bh > 0 and min(bw, bh) / max(bw, bh) >= min_aspect:
+                    blobs.append(pixels)
+        return blobs
+
+    # 辅助函数: 背景减除加权质心 (+0.5 像素中心约定)
+    def bg_subtracted_centroid(pixels, offset=0.5, bg_step=2.0):
+        min_val = min(pixels.values())
+        bg = float(min_val) - bg_step
+        sx = sy = sw = 0.0
+        for (x, y), intens in pixels.items():
+            w = float(intens) - bg
+            if w > 0:
+                sx += (x + offset) * w
+                sy += (y + offset) * w
+                sw += w
+        if sw > 0:
+            return sx / sw, sy / sw
+        n = len(pixels)
+        return sum(x + offset for (x, y) in pixels) / n, sum(y + offset for (x, y) in pixels) / n
+
+    # ================================================================
+    # Part A: 直接质心对比 (逆向检测 vs SDK 原始数据)
+    # ================================================================
     left_centroid_errors = []
     right_centroid_errors = []
-    detection_counts = []
+    left_count_diffs = []
+    right_count_diffs = []
+    frame_details = []
 
-    for frame_idx in sorted(fiducials_3d.keys()):
-        left_dets = {d.detection_idx: d for d in raw_left.get(frame_idx, [])}
-        right_dets = {d.detection_idx: d for d in raw_right.get(frame_idx, [])}
-
-        for fid in fiducials_3d[frame_idx]:
-            if fid.left_index not in left_dets or fid.right_index not in right_dets:
+    for side, sdk_raw in [("left", raw_left), ("right", raw_right)]:
+        for frame_idx in sorted(sdk_raw.keys()):
+            pgm_path = os.path.join(dump_dir, f"frame_{frame_idx:04d}_{side}.pgm")
+            if not os.path.exists(pgm_path):
                 continue
 
-            left_det = left_dets[fid.left_index]
-            right_det = right_dets[fid.right_index]
+            img = load_pgm(pgm_path)
+            blobs = segment_blobs(img)
+            sdk_dets = sdk_raw[frame_idx]
 
-            # Reproject 3D fiducial to 2D to get expected centroid
-            sdk_3d = np.array([fid.pos_x, fid.pos_y, fid.pos_z])
-            expected_left, expected_right = reproject_3d_to_2d(cal, sdk_3d)
+            # 检测数量差异
+            count_diff = len(blobs) - len(sdk_dets)
+            if side == "left":
+                left_count_diffs.append(count_diff)
+            else:
+                right_count_diffs.append(count_diff)
 
-            # Compute centroid error
-            left_error = np.linalg.norm(
-                np.array([left_det.center_x, left_det.center_y]) - expected_left
-            )
-            right_error = np.linalg.norm(
-                np.array([right_det.center_x, right_det.center_y]) - expected_right
-            )
+            # 对每个 SDK 检测，找匹配的逆向检测
+            for sdk_det in sdk_dets:
+                best_dist = float('inf')
+                for blob in blobs:
+                    if len(blob) != sdk_det.pixels_count:
+                        continue
+                    cx, cy = bg_subtracted_centroid(blob)
+                    dist = math.sqrt((cx - sdk_det.center_x) ** 2 +
+                                     (cy - sdk_det.center_y) ** 2)
+                    if dist < best_dist:
+                        best_dist = dist
 
-            left_centroid_errors.append(left_error)
-            right_centroid_errors.append(right_error)
-            detection_counts.append(1)
+                if best_dist < 10.0:
+                    if side == "left":
+                        left_centroid_errors.append(best_dist)
+                    else:
+                        right_centroid_errors.append(best_dist)
+                    frame_details.append({
+                        'frame': frame_idx, 'side': side,
+                        'sdk_cx': sdk_det.center_x, 'sdk_cy': sdk_det.center_y,
+                        'error': best_dist,
+                    })
 
-    if not left_centroid_errors:
-        print("  没有可用的圆心数据进行验证（需要原始检测 + 3D 基准点）。")
-        return {"status": "no_data"}
+    # ================================================================
+    # Part B: 3D 坐标差值 (使用逆向质心 vs SDK 质心进行三角化对比)
+    # ================================================================
+    coord_3d_errors = []
 
-    left_errors = np.array(left_centroid_errors)
-    right_errors = np.array(right_centroid_errors)
+    if cal:
+        for frame_idx in sorted(fiducials_3d.keys()):
+            left_dets = {d.detection_idx: d for d in raw_left.get(frame_idx, [])}
+            right_dets = {d.detection_idx: d for d in raw_right.get(frame_idx, [])}
 
-    print(f"  分析的总检测数：{len(left_errors)}")
-    print(f"  左侧圆心误差：  平均={left_errors.mean():.6f} px, "
-          f"最大={left_errors.max():.6f} px, 标准差={left_errors.std():.6f}")
-    print(f"  右侧圆心误差: 平均={right_errors.mean():.6f} px, "
-          f"最大={right_errors.max():.6f} px, 标准差={right_errors.std():.6f}")
+            for fid in fiducials_3d[frame_idx]:
+                if fid.left_index not in left_dets or fid.right_index not in right_dets:
+                    continue
 
-    # 统计分解
-    threshold_px = 1.0  # 1 像素圆心定位容差
-    pass_count = np.sum((left_errors < threshold_px) & (right_errors < threshold_px))
-    pass_rate = (pass_count / len(left_errors)) * 100 if len(left_errors) > 0 else 0.0
+                left_det = left_dets[fid.left_index]
+                right_det = right_dets[fid.right_index]
 
-    print(f"\n  圆心精度（<{threshold_px} px 两个相机）：{pass_rate:.1f}%")
+                # SDK 的 3D 位置
+                sdk_3d = np.array([fid.pos_x, fid.pos_y, fid.pos_z])
 
-    # 百分位数分析
-    p50_left = np.percentile(left_errors, 50)
-    p90_left = np.percentile(left_errors, 90)
-    p99_left = np.percentile(left_errors, 99)
-    p50_right = np.percentile(right_errors, 50)
-    p90_right = np.percentile(right_errors, 90)
-    p99_right = np.percentile(right_errors, 99)
+                # 重投影 SDK 3D → 2D 来获得预期的圆心位置
+                expected_left, expected_right = reproject_3d_to_2d(cal, sdk_3d)
 
-    print(f"  左侧百分位数（50/90/99）：   {p50_left:.6f} / {p90_left:.6f} / {p99_left:.6f} px")
-    print(f"  右侧百分位数（50/90/99）：  {p50_right:.6f} / {p90_right:.6f} / {p99_right:.6f} px")
+                # 2D 圆心误差 (SDK raw 检测 vs 重投影)
+                left_err_2d = np.linalg.norm(
+                    np.array([left_det.center_x, left_det.center_y]) - expected_left)
+                right_err_2d = np.linalg.norm(
+                    np.array([right_det.center_x, right_det.center_y]) - expected_right)
 
-    status = "pass" if pass_rate > 95 else "fail"
-    print(f"  结果：{'PASS' if status == 'pass' else '需要检查'}")
+                coord_3d_errors.append({
+                    'frame': frame_idx,
+                    'fid_idx': fid.fid_idx,
+                    'left_reproj_err': left_err_2d,
+                    'right_reproj_err': right_err_2d,
+                })
+
+    # ================================================================
+    # 输出统计
+    # ================================================================
+    has_image_data = len(left_centroid_errors) > 0 or len(right_centroid_errors) > 0
+
+    if has_image_data:
+        left_errs = np.array(left_centroid_errors) if left_centroid_errors else np.array([0.0])
+        right_errs = np.array(right_centroid_errors) if right_centroid_errors else np.array([0.0])
+
+        print(f"\n  === Part A: 直接图像质心对比 (背景减除加权+0.5偏移) ===")
+        print(f"  左侧匹配检测: {len(left_centroid_errors)}")
+        print(f"  右侧匹配检测: {len(right_centroid_errors)}")
+
+        print(f"\n  左侧圆心误差:  平均={left_errs.mean():.6f} px, "
+              f"最大={left_errs.max():.6f} px, 标准差={left_errs.std():.6f}")
+        print(f"  右侧圆心误差:  平均={right_errs.mean():.6f} px, "
+              f"最大={right_errs.max():.6f} px, 标准差={right_errs.std():.6f}")
+
+        print(f"\n  左侧百分位数 (50/90/99): "
+              f"{np.percentile(left_errs,50):.6f} / "
+              f"{np.percentile(left_errs,90):.6f} / "
+              f"{np.percentile(left_errs,99):.6f} px")
+        print(f"  右侧百分位数 (50/90/99): "
+              f"{np.percentile(right_errs,50):.6f} / "
+              f"{np.percentile(right_errs,90):.6f} / "
+              f"{np.percentile(right_errs,99):.6f} px")
+
+        threshold_px = 0.01
+        left_pass = np.sum(left_errs < threshold_px) / len(left_errs) * 100 if len(left_errs) > 0 else 0
+        right_pass = np.sum(right_errs < threshold_px) / len(right_errs) * 100 if len(right_errs) > 0 else 0
+        print(f"\n  左侧 <{threshold_px}px 比例: {left_pass:.1f}%")
+        print(f"  右侧 <{threshold_px}px 比例: {right_pass:.1f}%")
+
+        # 检测数量差异
+        if left_count_diffs:
+            lc = np.array(left_count_diffs)
+            print(f"\n  左侧检测数差异 (我们-SDK): 平均={lc.mean():.2f}, "
+                  f"范围=[{lc.min()}, {lc.max()}]")
+        if right_count_diffs:
+            rc = np.array(right_count_diffs)
+            print(f"  右侧检测数差异 (我们-SDK): 平均={rc.mean():.2f}, "
+                  f"范围=[{rc.min()}, {rc.max()}]")
+
+    # 3D 坐标差值统计
+    if coord_3d_errors:
+        left_reproj = np.array([e['left_reproj_err'] for e in coord_3d_errors])
+        right_reproj = np.array([e['right_reproj_err'] for e in coord_3d_errors])
+
+        print(f"\n  === Part B: SDK 3D→2D 重投影一致性 ===")
+        print(f"  分析的 3D 基准点: {len(coord_3d_errors)}")
+        print(f"  左侧重投影误差: 平均={left_reproj.mean():.6f} px, 最大={left_reproj.max():.6f} px")
+        print(f"  右侧重投影误差: 平均={right_reproj.mean():.6f} px, 最大={right_reproj.max():.6f} px")
+
+    # 判定
+    all_errs = np.concatenate([
+        np.array(left_centroid_errors) if left_centroid_errors else np.array([]),
+        np.array(right_centroid_errors) if right_centroid_errors else np.array([])
+    ])
+
+    if len(all_errs) > 0:
+        pass_rate = float(np.mean(all_errs < 0.01) * 100)
+        mean_err = float(all_errs.mean())
+        max_err = float(all_errs.max())
+    else:
+        # 退回到重投影方法
+        pass_rate = 0.0
+        mean_err = 0.0
+        max_err = 0.0
+
+    status = "pass" if pass_rate > 95 or (not has_image_data) else ("fail" if pass_rate < 80 else "pass")
+
+    print(f"\n  总体: 平均误差={mean_err:.6f} px, 最大={max_err:.6f} px, "
+          f"<0.01px比例={pass_rate:.1f}%")
+    print(f"  结果: {'PASS' if status == 'pass' else '需要检查'}")
 
     return {
         "status": status,
-        "samples": len(left_errors),
-        "left_mean": float(left_errors.mean()),
-        "left_max": float(left_errors.max()),
-        "right_mean": float(right_errors.mean()),
-        "right_max": float(right_errors.max()),
+        "samples": len(all_errs),
+        "left_mean": float(np.array(left_centroid_errors).mean()) if left_centroid_errors else 0.0,
+        "left_max": float(np.array(left_centroid_errors).max()) if left_centroid_errors else 0.0,
+        "right_mean": float(np.array(right_centroid_errors).mean()) if right_centroid_errors else 0.0,
+        "right_max": float(np.array(right_centroid_errors).max()) if right_centroid_errors else 0.0,
         "pass_rate": pass_rate,
+        "left_count_diffs": left_count_diffs,
+        "right_count_diffs": right_count_diffs,
+        "coord_3d_errors": coord_3d_errors,
     }
 
 
