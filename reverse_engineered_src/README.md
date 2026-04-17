@@ -79,3 +79,18 @@ fusionTrack64.dll:
 - **类层次结构**：95%准确（来自RTTI信息）
 - **算法逻辑**：基于标准计算机视觉算法 + DLL字符串反推的合理还原
 - **具体实现细节**（如精确的数值优化参数）：为合理推测
+
+## 验证结果 (2026-04)
+
+通过 `stereo99_DumpAllData` 捕获的 200 帧 SDK 输出数据进行对比验证，**所有 6 项验证均通过**：
+
+| 验证项 | 状态 | 关键指标 |
+|--------|------|---------|
+| 3D→2D 重投影 | ✅ PASS | mean 0.003/0.005 px (左/右) |
+| 三角化 (3D重建) | ✅ PASS | good: mean 0.024 mm, 97.6% < 0.05mm |
+| 极线几何 | ✅ PASS | diff mean 0.001 px, 相关系数 1.000 |
+| 工具识别 (Kabsch) | ✅ PASS | trans mean 0.0002 mm |
+| 镜头去畸变 | ✅ PASS | round-trip 0.000 px |
+| 数据交叉引用 | ✅ PASS | 0 issues |
+
+详见 [analysis_verification_optimization.md](../analysis_verification_optimization.md)。
