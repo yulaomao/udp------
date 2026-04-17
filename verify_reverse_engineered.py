@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-verify_reverse_engineered.py
+"""verify_reverse_engineered.py
 
-Comprehensive verification of reverse-engineered fusionTrack algorithms
-against official SDK output data captured by stereo99_DumpAllData.
+反向工程的 fusionTrack 算法全面验证脚本
+针对 stereo99_DumpAllData 捕获的官方 SDK 输出数据进行验证。
 
-This script compares the reverse-engineered implementations of:
-1. Image segmentation & circle centroid extraction (SegmenterV21 / CircleFitting)
-2. Lens distortion correction (Brown-Conrady undistortion)
-3. Epipolar stereo matching (EpipolarMatcher / Match2D3D)
-4. Triangulation (closestPointOnRays)
-5. Marker recognition & pose estimation (MatchMarkers / Kabsch)
-6. 3D -> 2D reprojection
+本脚本验证以下反向工程实现：
+1. 图像分割和圆心提取（SegmenterV21 / CircleFitting）
+2. 镜头畸变校正（Brown-Conrady 去畸变）
+3. 对极立体匹配（EpipolarMatcher / Match2D3D）
+4. 三角测量（closestPointOnRays）
+5. 标记识别和位姿估计（MatchMarkers / Kabsch）
+6. 3D -> 2D 重投影
 
-Usage:
+使用方法：
     python verify_reverse_engineered.py --data-dir ./dump_output [--image-dir ./dump_output]
 
-Input: CSV files and images from stereo99_DumpAllData
-Output: Comparison report with per-algorithm accuracy metrics
+输入：来自 stereo99_DumpAllData 的 CSV 文件和图像
+输出：每种算法精度指标的对比报告
 """
 
 import argparse
@@ -39,7 +38,7 @@ import numpy as np
 
 @dataclass
 class Calibration:
-    """Stereo camera calibration parameters."""
+    """立体相机标定参数。"""
     left_focal: np.ndarray = field(default_factory=lambda: np.zeros(2))
     left_center: np.ndarray = field(default_factory=lambda: np.zeros(2))
     left_distortion: np.ndarray = field(default_factory=lambda: np.zeros(5))
@@ -54,7 +53,7 @@ class Calibration:
 
 @dataclass
 class RawDetection:
-    """2D circle detection from one camera."""
+    """单个相机的 2D 圆形检测。"""
     frame_idx: int
     detection_idx: int
     center_x: float
@@ -67,7 +66,7 @@ class RawDetection:
 
 @dataclass
 class Fiducial3D:
-    """3D fiducial from stereo matching."""
+    """立体匹配得到的 3D 基准点。"""
     frame_idx: int
     fid_idx: int
     pos_x: float
@@ -83,7 +82,7 @@ class Fiducial3D:
 
 @dataclass
 class MarkerData:
-    """Marker pose data."""
+    """标记位姿数据。"""
     frame_idx: int
     marker_idx: int
     geometry_id: int
@@ -98,7 +97,7 @@ class MarkerData:
 
 @dataclass
 class Reprojection:
-    """3D -> 2D reprojection result."""
+    """3D -> 2D 重投影结果。"""
     frame_idx: int
     fid_idx: int
     pos_3d: np.ndarray  # (3,)
@@ -108,7 +107,7 @@ class Reprojection:
 
 @dataclass
 class GeometryPoint:
-    """A point in the marker geometry definition."""
+    """标记几何定义中的一个点。"""
     index: int
     position: np.ndarray  # (3,)
     normal: np.ndarray  # (3,)
@@ -118,7 +117,7 @@ class GeometryPoint:
 
 @dataclass
 class ImageHeader:
-    """Per-frame image metadata."""
+    """每帧图像元数据。"""
     frame_idx: int
     timestamp_us: int
     counter: int
@@ -130,10 +129,10 @@ class ImageHeader:
 
 
 def load_calibration(data_dir: str) -> Optional[Calibration]:
-    """Load calibration.csv."""
+    """加载 calibration.csv。"""
     path = os.path.join(data_dir, "calibration.csv")
     if not os.path.exists(path):
-        print(f"WARNING: {path} not found")
+        print(f"警告：{path} 未找到")
         return None
 
     cal = Calibration()
@@ -169,7 +168,7 @@ def load_calibration(data_dir: str) -> Optional[Calibration]:
 
 
 def load_csv_generic(path: str) -> List[List[str]]:
-    """Load a CSV file, skipping comment/header lines."""
+    """加载 CSV 文件，跳过注释/头部行。"""
     rows = []
     if not os.path.exists(path):
         return rows
@@ -694,9 +693,9 @@ def kabsch_registration(model_points: np.ndarray,
 
 def verify_reprojection(cal: Calibration,
                         reprojections: Dict[int, List[Reprojection]]) -> dict:
-    """Verify 3D -> 2D reprojection against SDK's ftkReprojectPoint output."""
+    """验证 3D -> 2D 重投影是否与 SDK 的 ftkReprojectPoint 输出一致。"""
     print("\n" + "=" * 70)
-    print("VERIFICATION 1: 3D -> 2D Reprojection (ftkReprojectPoint)")
+    print("验证 1：3D -> 2D 重投影（ftkReprojectPoint）")
     print("=" * 70)
 
     all_left_errs = []
@@ -713,22 +712,22 @@ def verify_reprojection(cal: Calibration,
             all_right_errs.append(right_err)
 
     if not all_left_errs:
-        print("  No reprojection data available.")
+        print("  没有可用的重投影数据。")
         return {"status": "no_data"}
 
     left_errs = np.array(all_left_errs)
     right_errs = np.array(all_right_errs)
 
-    print(f"  Samples: {len(left_errs)}")
-    print(f"  Left  reprojection error:  mean={left_errs.mean():.6f} px, "
-          f"max={left_errs.max():.6f} px, std={left_errs.std():.6f}")
-    print(f"  Right reprojection error:  mean={right_errs.mean():.6f} px, "
-          f"max={right_errs.max():.6f} px, std={right_errs.std():.6f}")
+    print(f"  样本数：{len(left_errs)}")
+    print(f"  左相机重投影误差： 平均={left_errs.mean():.6f} px, "
+          f"最大={left_errs.max():.6f} px, 标准差={left_errs.std():.6f}")
+    print(f"  右相机重投影误差： 平均={right_errs.mean():.6f} px, "
+          f"最大={right_errs.max():.6f} px, 标准差={right_errs.std():.6f}")
 
-    threshold = 0.1  # pixels
+    threshold = 0.1  # 像素
     pass_rate = np.mean(np.maximum(left_errs, right_errs) < threshold) * 100
-    print(f"  Pass rate (<{threshold} px): {pass_rate:.1f}%")
-    print(f"  RESULT: {'PASS' if pass_rate > 95 else 'NEEDS INVESTIGATION'}")
+    print(f"  通过率（<{threshold} px）：{pass_rate:.1f}%")
+    print(f"  结果：{'PASS' if pass_rate > 95 else '需要检查'}")
 
     return {
         "status": "pass" if pass_rate > 95 else "fail",
@@ -743,9 +742,9 @@ def verify_triangulation(cal: Calibration,
                          fiducials_3d: Dict[int, List[Fiducial3D]],
                          raw_left: Dict[int, List[RawDetection]],
                          raw_right: Dict[int, List[RawDetection]]) -> dict:
-    """Verify stereo triangulation against SDK 3D fiducial output."""
+    """验证立体三角测量是否与 SDK 3D 基准点输出一致。"""
     print("\n" + "=" * 70)
-    print("VERIFICATION 2: Stereo Triangulation (EpipolarMatcher)")
+    print("验证 2：立体三角测量（EpipolarMatcher）")
     print("=" * 70)
 
     pos_errors = []
@@ -779,7 +778,7 @@ def verify_triangulation(cal: Calibration,
             statuses.append(fid.status_bits)
 
     if not pos_errors:
-        print("  No triangulation data available (need raw + 3D fiducials).")
+        print("  没有可用的三角测量数据（需要raw + 3D基准点）。")
         return {"status": "no_data"}
 
     pos_errors = np.array(pos_errors)
@@ -787,12 +786,12 @@ def verify_triangulation(cal: Calibration,
     tri_errors = np.array(tri_errors)
     statuses = np.array(statuses)
 
-    # Overall statistics
-    print(f"  Total samples: {len(pos_errors)}")
-    print(f"  3D position error (all):   mean={pos_errors.mean():.6f} mm, "
-          f"max={pos_errors.max():.6f} mm, std={pos_errors.std():.6f}")
+    # 整体统计
+    print(f"  总样本数：{len(pos_errors)}")
+    print(f"  3D 位置误差（所有）： 平均={pos_errors.mean():.6f} mm, "
+          f"最大={pos_errors.max():.6f} mm, 标准差={pos_errors.std():.6f}")
 
-    # Status=0 (good quality matches) — the primary metric
+    # 状态=0（高质量匹配）— 主要指标
     good_mask = statuses == 0
     good_count = int(good_mask.sum())
     outlier_count = len(pos_errors) - good_count
@@ -801,33 +800,33 @@ def verify_triangulation(cal: Calibration,
         good_pos = pos_errors[good_mask]
         good_epi = epi_errors[good_mask]
         good_tri = tri_errors[good_mask]
-        print(f"\n  Good matches (status=0): {good_count}")
-        print(f"    3D position error:       mean={good_pos.mean():.6f} mm, "
-              f"max={good_pos.max():.6f} mm")
-        print(f"    Epipolar error diff:     mean={good_epi.mean():.6f} px, "
-              f"max={good_epi.max():.6f} px")
-        print(f"    Triangulation error diff: mean={good_tri.mean():.6f} mm, "
-              f"max={good_tri.max():.6f} mm")
+        print(f"\n  良好匹配（状态=0）：{good_count}")
+        print(f"    3D 位置误差：       平均={good_pos.mean():.6f} mm, "
+              f"最大={good_pos.max():.6f} mm")
+        print(f"    对极误差差值：     平均={good_epi.mean():.6f} px, "
+              f"最大={good_epi.max():.6f} px")
+        print(f"    三角测量误差差值: 平均={good_tri.mean():.6f} mm, "
+              f"最大={good_tri.max():.6f} mm")
 
     if outlier_count > 0:
         out_pos = pos_errors[~good_mask]
-        print(f"\n  Outlier matches (status>0): {outlier_count}")
-        print(f"    3D position error:       mean={out_pos.mean():.6f} mm, "
-              f"max={out_pos.max():.6f} mm")
-        print(f"    (Large errors expected: float32 precision degrades with distance, ~30mm at 93km depth)")
+        print(f"\n  异常匹配（状态>0）：{outlier_count}")
+        print(f"    3D 位置误差：       平均={out_pos.mean():.6f} mm, "
+              f"最大={out_pos.max():.6f} mm")
+        print(f"    （预计误差较大：float32 精度随距离退化，~30mm @ 93km 深度）")
 
-    # Pass rate based on good matches: float32 precision gives ~0.03mm max error
-    threshold_mm = 0.05  # 50 microns — accounts for float32 precision
+    # 基于良好匹配的验证率：float32 精度给出 ~0.03mm 最大误差
+    threshold_mm = 0.05  # 50 微米 — 考虑 float32 精度
     if good_count > 0:
         pass_rate_good = np.mean(good_pos < threshold_mm) * 100
     else:
         pass_rate_good = 0.0
     pass_rate_all = np.mean(pos_errors < threshold_mm) * 100
 
-    print(f"\n  Pass rate (good, <{threshold_mm} mm): {pass_rate_good:.1f}%")
-    print(f"  Pass rate (all,  <{threshold_mm} mm): {pass_rate_all:.1f}%")
+    print(f"\n  验证率（良好，<{threshold_mm} mm）：{pass_rate_good:.1f}%")
+    print(f"  验证率（所有， <{threshold_mm} mm）：{pass_rate_all:.1f}%")
     status = "pass" if pass_rate_good > 95 else "fail"
-    print(f"  RESULT: {'PASS' if status == 'pass' else 'NEEDS INVESTIGATION'}")
+    print(f"  结果：{'PASS' if status == 'pass' else '需要检查'}")
 
     return {
         "status": status,
@@ -848,13 +847,13 @@ def verify_epipolar_geometry(cal: Calibration,
                              fiducials_3d: Dict[int, List[Fiducial3D]],
                              raw_left: Dict[int, List[RawDetection]],
                              raw_right: Dict[int, List[RawDetection]]) -> dict:
-    """Verify epipolar line computation and matching constraint."""
+    """验证对极线计算和匹配约束。"""
     print("\n" + "=" * 70)
-    print("VERIFICATION 3: Epipolar Geometry (Fundamental Matrix)")
+    print("验证 3：对极几何（基础矩阵）")
     print("=" * 70)
 
     F = compute_fundamental_matrix(cal)
-    print(f"  Fundamental matrix F:")
+    print(f"  基础矩阵 F：")
     for row in F:
         print(f"    [{row[0]:+.10e}, {row[1]:+.10e}, {row[2]:+.10e}]")
 
@@ -906,32 +905,32 @@ def verify_epipolar_geometry(cal: Calibration,
             epi_errors_sdk.append(fid.epipolar_error)
 
     if not epi_errors_our:
-        print("  No data for epipolar verification.")
+        print("  没有对极验证数据。")
         return {"status": "no_data"}
 
     our = np.array(epi_errors_our)
     sdk = np.array(epi_errors_sdk)
     diff = np.abs(our - sdk)
 
-    print(f"\n  Samples: {len(our)}")
-    print(f"  Our epipolar error:   mean={np.mean(np.abs(our)):.6f} px, "
-          f"std={np.std(our):.6f}")
-    print(f"  SDK epipolar error:   mean={np.mean(np.abs(sdk)):.6f} px, "
-          f"std={np.std(sdk):.6f}")
-    print(f"  Difference (|ours-sdk|): mean={diff.mean():.6f} px, "
-          f"max={diff.max():.6f} px")
+    print(f"\n  样本数：{len(our)}")
+    print(f"  我们的对极误差：   平均={np.mean(np.abs(our)):.6f} px, "
+          f"标准差={np.std(our):.6f}")
+    print(f"  SDK 对极误差：   平均={np.mean(np.abs(sdk)):.6f} px, "
+          f"标准差={np.std(sdk):.6f}")
+    print(f"  差值（|我们-SDK|）： 平均={diff.mean():.6f} px, "
+          f"最大={diff.max():.6f} px")
 
-    # Correlation
+    # 相关性
     if np.std(our) > 1e-12 and np.std(sdk) > 1e-12:
         corr = np.corrcoef(our, sdk)[0, 1]
-        print(f"  Correlation: {corr:.6f}")
+        print(f"  相关性：{corr:.6f}")
     else:
         corr = float("nan")
 
     threshold = 0.01
     pass_rate = np.mean(diff < threshold) * 100
-    print(f"  Pass rate (<{threshold} px diff): {pass_rate:.1f}%")
-    print(f"  RESULT: {'PASS' if pass_rate > 90 else 'NEEDS INVESTIGATION'}")
+    print(f"  验证率（<{threshold} px 差值）：{pass_rate:.1f}%")
+    print(f"  结果：{'PASS' if pass_rate > 90 else '需要检查'}")
 
     return {
         "status": "pass" if pass_rate > 90 else "fail",
@@ -948,17 +947,17 @@ def verify_marker_registration(markers: Dict[int, List[MarkerData]],
                                geometry_id: int,
                                geometry_points: List[
                                    GeometryPoint]) -> dict:
-    """Verify marker pose estimation (Kabsch registration) against SDK output."""
+    """验证标记位姿估计（Kabsch 配准）是否与 SDK 输出一致。"""
     print("\n" + "=" * 70)
-    print("VERIFICATION 4: Marker Registration (Kabsch Algorithm)")
+    print("验证 4：标记配准（Kabsch 算法）")
     print("=" * 70)
 
     if not geometry_points:
-        print("  No geometry definition loaded.")
+        print("  未加载几何定义。")
         return {"status": "no_data"}
 
     model_pts_all = np.array([gp.position for gp in geometry_points])
-    print(f"  Geometry ID: {geometry_id}, points: {len(model_pts_all)}")
+    print(f"  几何 ID：{geometry_id}，点数：{len(model_pts_all)}")
 
     trans_errors = []
     rot_errors = []
@@ -1012,25 +1011,25 @@ def verify_marker_registration(markers: Dict[int, List[MarkerData]],
             rms_diffs.append(rms_diff)
 
     if not trans_errors:
-        print("  No marker data matched for verification.")
+        print("  没有可用的标记数据进行验证。")
         return {"status": "no_data"}
 
     trans_errors = np.array(trans_errors)
     rot_errors = np.array(rot_errors)
     rms_diffs = np.array(rms_diffs)
 
-    print(f"  Samples: {len(trans_errors)}")
-    print(f"  Translation error:    mean={trans_errors.mean():.6f} mm, "
-          f"max={trans_errors.max():.6f} mm")
-    print(f"  Rotation error (Fro): mean={rot_errors.mean():.8f}, "
-          f"max={rot_errors.max():.8f}")
-    print(f"  RMS error diff:       mean={rms_diffs.mean():.6f} mm, "
-          f"max={rms_diffs.max():.6f} mm")
+    print(f"  样本数：{len(trans_errors)}")
+    print(f"  平移误差：    平均={trans_errors.mean():.6f} mm, "
+          f"最大={trans_errors.max():.6f} mm")
+    print(f"  旋转误差（Fro）： 平均={rot_errors.mean():.8f}, "
+          f"最大={rot_errors.max():.8f}")
+    print(f"  RMS 误差差值：       平均={rms_diffs.mean():.6f} mm, "
+          f"最大={rms_diffs.max():.6f} mm")
 
-    trans_threshold = 0.01  # 10 microns
+    trans_threshold = 0.01  # 10 微米
     pass_rate = np.mean(trans_errors < trans_threshold) * 100
-    print(f"  Pass rate (<{trans_threshold} mm translation): {pass_rate:.1f}%")
-    print(f"  RESULT: {'PASS' if pass_rate > 90 else 'NEEDS INVESTIGATION'}")
+    print(f"  验证率（<{trans_threshold} mm 平移）：{pass_rate:.1f}%")
+    print(f"  结果：{'PASS' if pass_rate > 90 else '需要检查'}")
 
     return {
         "status": "pass" if pass_rate > 90 else "fail",
@@ -1045,12 +1044,12 @@ def verify_marker_registration(markers: Dict[int, List[MarkerData]],
 
 def verify_undistortion(cal: Calibration,
                         reprojections: Dict[int, List[Reprojection]]) -> dict:
-    """Verify undistortion by round-tripping: distort(undistort(p)) ≈ p.
+    """通过往返验证去畸变：distort(undistort(p)) ≈ p。
 
-    Uses reprojection data to test the consistency of the undistortion model.
+    使用重投影数据来测试去畸变模型的一致性。
     """
     print("\n" + "=" * 70)
-    print("VERIFICATION 5: Lens Undistortion (Brown-Conrady)")
+    print("验证 5：镜头去畸变（Brown-Conrady）")
     print("=" * 70)
 
     left_roundtrip_errors = []
@@ -1083,22 +1082,22 @@ def verify_undistortion(cal: Calibration,
             right_roundtrip_errors.append(err)
 
     if not left_roundtrip_errors:
-        print("  No data for undistortion round-trip test.")
+        print("  没有去畸变往返测试的数据。")
         return {"status": "no_data"}
 
     left_errs = np.array(left_roundtrip_errors)
     right_errs = np.array(right_roundtrip_errors)
 
-    print(f"  Samples: {len(left_errs)}")
-    print(f"  Left  round-trip error:  mean={left_errs.mean():.10f} px, "
-          f"max={left_errs.max():.10f} px")
-    print(f"  Right round-trip error:  mean={right_errs.mean():.10f} px, "
-          f"max={right_errs.max():.10f} px")
+    print(f"  样本数：{len(left_errs)}")
+    print(f"  左侧往返误差：  平均={left_errs.mean():.10f} px, "
+          f"最大={left_errs.max():.10f} px")
+    print(f"  右侧往返误差：  平均={right_errs.mean():.10f} px, "
+          f"最大={right_errs.max():.10f} px")
 
-    threshold = 1e-3  # 0.001 pixels — iterative undistortion residual
+    threshold = 1e-3  # 0.001 像素 — 迭代去畸变残差
     all_pass = (left_errs.max() < threshold) and (right_errs.max() < threshold)
-    print(f"  RESULT: {'PASS' if all_pass else 'NEEDS INVESTIGATION'} "
-          f"(threshold: {threshold} px)")
+    print(f"  结果：{'PASS' if all_pass else '需要检查'} "
+          f"（阈值：{threshold} px）")
 
     return {
         "status": "pass" if all_pass else "fail",
@@ -1108,13 +1107,103 @@ def verify_undistortion(cal: Calibration,
     }
 
 
+def verify_circle_centroid(raw_left: Dict[int, List[RawDetection]],
+                           raw_right: Dict[int, List[RawDetection]],
+                           fiducials_3d: Dict[int, List[Fiducial3D]],
+                           cal: Calibration) -> dict:
+    """验证圆心检测一致性。
+
+    比较来自原始检测的圆心位置与通过重投影 3D 基准点获得的预期位置。
+
+    返回（圆心误差统计）。
+    """
+    print("\n" + "=" * 70)
+    print("验证 6：圆心检测（SegmenterV21）")
+    print("=" * 70)
+
+    left_centroid_errors = []
+    right_centroid_errors = []
+    detection_counts = []
+
+    for frame_idx in sorted(fiducials_3d.keys()):
+        left_dets = {d.detection_idx: d for d in raw_left.get(frame_idx, [])}
+        right_dets = {d.detection_idx: d for d in raw_right.get(frame_idx, [])}
+
+        for fid in fiducials_3d[frame_idx]:
+            if fid.left_index not in left_dets or fid.right_index not in right_dets:
+                continue
+
+            left_det = left_dets[fid.left_index]
+            right_det = right_dets[fid.right_index]
+
+            # Reproject 3D fiducial to 2D to get expected centroid
+            sdk_3d = np.array([fid.pos_x, fid.pos_y, fid.pos_z])
+            expected_left, expected_right = reproject_3d_to_2d(cal, sdk_3d)
+
+            # Compute centroid error
+            left_error = np.linalg.norm(
+                np.array([left_det.center_x, left_det.center_y]) - expected_left
+            )
+            right_error = np.linalg.norm(
+                np.array([right_det.center_x, right_det.center_y]) - expected_right
+            )
+
+            left_centroid_errors.append(left_error)
+            right_centroid_errors.append(right_error)
+            detection_counts.append(1)
+
+    if not left_centroid_errors:
+        print("  没有可用的圆心数据进行验证（需要原始检测 + 3D 基准点）。")
+        return {"status": "no_data"}
+
+    left_errors = np.array(left_centroid_errors)
+    right_errors = np.array(right_centroid_errors)
+
+    print(f"  分析的总检测数：{len(left_errors)}")
+    print(f"  左侧圆心误差：  平均={left_errors.mean():.6f} px, "
+          f"最大={left_errors.max():.6f} px, 标准差={left_errors.std():.6f}")
+    print(f"  右侧圆心误差: 平均={right_errors.mean():.6f} px, "
+          f"最大={right_errors.max():.6f} px, 标准差={right_errors.std():.6f}")
+
+    # 统计分解
+    threshold_px = 1.0  # 1 像素圆心定位容差
+    pass_count = np.sum((left_errors < threshold_px) & (right_errors < threshold_px))
+    pass_rate = (pass_count / len(left_errors)) * 100 if len(left_errors) > 0 else 0.0
+
+    print(f"\n  圆心精度（<{threshold_px} px 两个相机）：{pass_rate:.1f}%")
+
+    # 百分位数分析
+    p50_left = np.percentile(left_errors, 50)
+    p90_left = np.percentile(left_errors, 90)
+    p99_left = np.percentile(left_errors, 99)
+    p50_right = np.percentile(right_errors, 50)
+    p90_right = np.percentile(right_errors, 90)
+    p99_right = np.percentile(right_errors, 99)
+
+    print(f"  左侧百分位数（50/90/99）：   {p50_left:.6f} / {p90_left:.6f} / {p99_left:.6f} px")
+    print(f"  右侧百分位数（50/90/99）：  {p50_right:.6f} / {p90_right:.6f} / {p99_right:.6f} px")
+
+    status = "pass" if pass_rate > 95 else "fail"
+    print(f"  结果：{'PASS' if status == 'pass' else '需要检查'}")
+
+    return {
+        "status": status,
+        "samples": len(left_errors),
+        "left_mean": float(left_errors.mean()),
+        "left_max": float(left_errors.max()),
+        "right_mean": float(right_errors.mean()),
+        "right_max": float(right_errors.max()),
+        "pass_rate": pass_rate,
+    }
+
+
 def verify_cross_references(fiducials_3d: Dict[int, List[Fiducial3D]],
                             raw_left: Dict[int, List[RawDetection]],
                             raw_right: Dict[int, List[RawDetection]],
                             markers: Dict[int, List[MarkerData]]) -> dict:
-    """Verify data cross-referencing consistency."""
+    """验证数据交叉参考一致性。"""
     print("\n" + "=" * 70)
-    print("VERIFICATION 6: Data Cross-Reference Consistency")
+    print("验证 7：数据交叉参考一致性")
     print("=" * 70)
 
     issues = []
@@ -1143,15 +1232,15 @@ def verify_cross_references(fiducials_3d: Dict[int, List[Fiducial3D]],
                     issues.append(f"Frame {frame_idx}: marker[{marker.marker_idx}].fidCorresp[{gi}]="
                                   f"{fc} not in fid3d")
 
-    print(f"  Total 3D fiducials checked: {total_fids}")
-    print(f"  Total markers checked: {total_markers}")
-    print(f"  Cross-reference issues: {len(issues)}")
+    print(f"  检查的 3D 基准点总数：{total_fids}")
+    print(f"  检查的标记总数：{total_markers}")
+    print(f"  交叉参考问题数：{len(issues)}")
     if issues:
         for issue in issues[:10]:
             print(f"    - {issue}")
         if len(issues) > 10:
-            print(f"    ... and {len(issues) - 10} more")
-    print(f"  RESULT: {'PASS' if len(issues) == 0 else 'NEEDS INVESTIGATION'}")
+            print(f"    ... 还有 {len(issues) - 10} 个")
+    print(f"  结果：{'PASS' if len(issues) == 0 else '需要检查'}")
 
     return {
         "status": "pass" if len(issues) == 0 else "fail",
@@ -1168,9 +1257,9 @@ def print_data_summary(image_headers: Dict[int, ImageHeader],
                        markers: Dict[int, List[MarkerData]],
                        reprojections: Dict[int, List[Reprojection]],
                        cal: Optional[Calibration]) -> None:
-    """Print summary of loaded data."""
+    """打印已加载数据的摘要。"""
     print("\n" + "=" * 70)
-    print("DATA SUMMARY")
+    print("数据摘要")
     print("=" * 70)
 
     frames = sorted(set(
@@ -1181,12 +1270,12 @@ def print_data_summary(image_headers: Dict[int, ImageHeader],
         list(markers.keys())
     ))
 
-    print(f"  Total frames: {len(frames)}")
-    print(f"  Image headers: {len(image_headers)}")
+    print(f"  总帧数：{len(frames)}")
+    print(f"  图像头数：{len(image_headers)}")
     if image_headers:
         first_hdr = image_headers[min(image_headers.keys())]
-        print(f"  Image size: {first_hdr.width} x {first_hdr.height}, "
-              f"stride: {first_hdr.stride_bytes}")
+        print(f"  图像尺寸：{first_hdr.width} x {first_hdr.height}, "
+              f"步幅：{first_hdr.stride_bytes}")
 
     total_left = sum(len(v) for v in raw_left.values())
     total_right = sum(len(v) for v in raw_right.values())
@@ -1194,23 +1283,23 @@ def print_data_summary(image_headers: Dict[int, ImageHeader],
     total_markers = sum(len(v) for v in markers.values())
     total_reproj = sum(len(v) for v in reprojections.values())
 
-    print(f"  Left detections: {total_left} across {len(raw_left)} frames")
-    print(f"  Right detections: {total_right} across {len(raw_right)} frames")
-    print(f"  3D fiducials: {total_fids} across {len(fiducials_3d)} frames")
-    print(f"  Markers: {total_markers} across {len(markers)} frames")
-    print(f"  Reprojections: {total_reproj} across {len(reprojections)} frames")
-    print(f"  Calibration: {'Loaded' if cal else 'NOT AVAILABLE'}")
+    print(f"  左侧检测：{total_left}，跨越 {len(raw_left)} 帧")
+    print(f"  右侧检测：{total_right}，跨越 {len(raw_right)} 帧")
+    print(f"  3D 基准点：{total_fids}，跨越 {len(fiducials_3d)} 帧")
+    print(f"  标记：{total_markers}，跨越 {len(markers)} 帧")
+    print(f"  重投影：{total_reproj}，跨越 {len(reprojections)} 帧")
+    print(f"  标定：{'已加载' if cal else '不可用'}")
 
     if cal:
-        print(f"\n  Calibration details:")
-        print(f"    Left  focal: [{cal.left_focal[0]:.4f}, {cal.left_focal[1]:.4f}]")
-        print(f"    Left  center: [{cal.left_center[0]:.4f}, {cal.left_center[1]:.4f}]")
-        print(f"    Left  distortion: {cal.left_distortion}")
-        print(f"    Right focal: [{cal.right_focal[0]:.4f}, {cal.right_focal[1]:.4f}]")
-        print(f"    Right center: [{cal.right_center[0]:.4f}, {cal.right_center[1]:.4f}]")
-        print(f"    Right distortion: {cal.right_distortion}")
-        print(f"    Translation: {cal.translation}")
-        print(f"    Rotation (Rodrigues): {cal.rotation}")
+        print(f"\n  标定详情：")
+        print(f"    左侧焦距：[{cal.left_focal[0]:.4f}, {cal.left_focal[1]:.4f}]")
+        print(f"    左侧中心：[{cal.left_center[0]:.4f}, {cal.left_center[1]:.4f}]")
+        print(f"    左侧畸变：{cal.left_distortion}")
+        print(f"    右侧焦距：[{cal.right_focal[0]:.4f}, {cal.right_focal[1]:.4f}]")
+        print(f"    右侧中心：[{cal.right_center[0]:.4f}, {cal.right_center[1]:.4f}]")
+        print(f"    右侧畸变：{cal.right_distortion}")
+        print(f"    平移：{cal.translation}")
+        print(f"    旋转（Rodrigues）：{cal.rotation}")
 
 
 # ============================================================================
@@ -1220,30 +1309,29 @@ def print_data_summary(image_headers: Dict[int, ImageHeader],
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Verify reverse-engineered fusionTrack algorithms "
-                    "against SDK output data."
+        description="对反向工程的 fusionTrack 算法与 SDK 输出数据进行验证。"
     )
     parser.add_argument("--data-dir", required=True,
-                        help="Directory with CSV data from stereo99_DumpAllData")
+                        help="包含来自 stereo99_DumpAllData 的 CSV 数据的目录")
     parser.add_argument("--image-dir", default=None,
-                        help="Directory with images (defaults to data-dir)")
+                        help="包含图像的目录（默认为 data-dir）")
     args = parser.parse_args()
 
     data_dir = args.data_dir
     image_dir = args.image_dir or data_dir
 
     if not os.path.isdir(data_dir):
-        print(f"ERROR: Data directory not found: {data_dir}")
+        print(f"错误：找不到数据目录：{data_dir}")
         sys.exit(1)
 
     print("=" * 70)
-    print("FUSIONTRACK REVERSE-ENGINEERING VERIFICATION")
+    print("FUSIONTRACK 反向工程验证")
     print("=" * 70)
-    print(f"Data directory: {data_dir}")
-    print(f"Image directory: {image_dir}")
+    print(f"数据目录：{data_dir}")
+    print(f"图像目录：{image_dir}")
 
-    # Load all data
-    print("\nLoading data...")
+    # 加载所有数据
+    print("\n加载数据...")
     cal = load_calibration(data_dir)
     image_headers = load_image_headers(data_dir)
     raw_left = load_raw_detections(data_dir, "left")
@@ -1269,8 +1357,11 @@ def main():
             cal, fiducials_3d, raw_left, raw_right
         )
         results["undistortion"] = verify_undistortion(cal, reprojections)
+        results["circle_centroid"] = verify_circle_centroid(
+            raw_left, raw_right, fiducials_3d, cal
+        )
     else:
-        print("\nWARNING: No calibration data - skipping calibration-dependent tests")
+        print("\n警告：没有标定数据 - 跳过依赖于标定的测试")
 
     results["marker_registration"] = verify_marker_registration(
         markers_data, fiducials_3d, geometry_id, geometry_points
@@ -1279,30 +1370,30 @@ def main():
         fiducials_3d, raw_left, raw_right, markers_data
     )
 
-    # Final summary
+    # 最终总结
     print("\n" + "=" * 70)
-    print("FINAL SUMMARY")
+    print("最终总结")
     print("=" * 70)
 
     all_pass = True
     for name, result in results.items():
         status = result.get("status", "unknown")
-        icon = "✓" if status == "pass" else ("?" if status == "no_data" else "✗")
-        print(f"  [{icon}] {name}: {status}")
+        icon = "[√]" if status == "pass" else ("[?]" if status == "no_data" else "[×]")
+        print(f"  {icon} {name}：{status}")
         if status == "fail":
             all_pass = False
 
     print()
     if all_pass:
-        print("  Overall: ALL VERIFICATIONS PASSED")
+        print("  整体：所有验证均通过")
     else:
-        print("  Overall: SOME VERIFICATIONS NEED INVESTIGATION")
-        print("  Review the detailed output above for specific discrepancies.")
+        print("  整体：某些验证需要检查")
+        print("  查看上面的详细输出以了解具体差异。")
 
     print()
-    print("Note: Small numerical differences (< 1e-5) are expected due to")
-    print("floating-point precision differences between implementations.")
-    print("Larger differences may indicate algorithmic discrepancies to investigate.")
+    print("注意：小的数值差异（< 1e-5）是由实现之间的")
+    print("浮点精度差异引起的。")
+    print("较大的差异可能表示需要调查的算法差异。")
 
 
 if __name__ == "__main__":
