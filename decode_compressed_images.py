@@ -14,6 +14,14 @@ DLL 逆向定位:
   - compressV3_8bit 入口:       RVA 0x001f15a0 (压缩初始化)
   - compressV3_8bit 内循环:     RVA 0x001f1746 (逐像素编码, 558字节)
 
+传感器参数 (通过 Capstone 反汇编 + 数据验证确定):
+  ─────────────────────────────────────────────
+  传感器全分辨率:  2048 × 1088 像素
+  ROI (兴趣区域):  设备只传输包含有效数据的行范围
+  ROI 起始行:      内层帧头 offset 65-66 (u16 LE)
+  验证:            ROI_start + channel_count == 1088 (所有帧均成立)
+  ─────────────────────────────────────────────
+
 压缩格式 (V3 8-bit):
   ─────────────────────────────────────────────
   字节编码:
@@ -36,6 +44,14 @@ DLL 逆向定位:
     5. 行末填充0x00到16字节边界
     6. 连续空白行: 累计后写入跳过记录
   ─────────────────────────────────────────────
+
+  输出图像尺寸:
+    所有帧统一输出为 2048 × 1088 的完整传感器图像，
+    ROI 数据根据帧头中的 ROI 起始行放置在正确位置。
+    这确保了左右目图像尺寸一致，可直接用于:
+    - 圆心拟合 (circle center fitting)
+    - 基线匹配 (baseline matching)
+    - 立体匹配 (stereo matching)
 
 用法:
     python decode_compressed_images.py [pcapng_file] [--output-dir DIR] [--max-frames N]
@@ -60,6 +76,8 @@ from scapy.all import IP, IPv6, Raw, UDP, PcapNgReader
 
 INNER_HEADER_BYTES = 80          # 内层帧头部大小
 IMAGE_WIDTH = 2048               # 传感器宽度 (从字节级跟踪验证)
+IMAGE_HEIGHT = 1088              # 传感器高度 (通过 Capstone 反汇编 + ROI 验证确认)
+ROI_START_OFFSET = 65            # ROI起始行字段在内层帧头中的偏移 (u16 LE)
 STREAM_TAG_LEFT = 0x1003         # 左目 ROI 流标记
 STREAM_TAG_RIGHT = 0x1004        # 右目 ROI 流标记
 
@@ -243,38 +261,56 @@ def decompress_v3_8bit(body: bytes, width: int = IMAGE_WIDTH) -> list[dict[int, 
 # ─── 图像渲染 ──────────────────────────────────────────────────────────────
 
 def rows_to_image(
-    rows: list[dict[int, int]], width: int = IMAGE_WIDTH
+    rows: list[dict[int, int]],
+    width: int = IMAGE_WIDTH,
+    height: int = IMAGE_HEIGHT,
+    roi_start_row: int = 0,
 ) -> tuple[Image.Image | None, Image.Image | None]:
     """
-    将稀疏行数据转换为 PIL 图像.
+    将稀疏行数据转换为固定尺寸的 PIL 图像.
+
+    所有帧输出为统一的 width × height 传感器图像:
+    - ROI 数据从 roi_start_row 开始放置
+    - 非 ROI 区域填充为黑色 (0)
+    - 确保左右目图像尺寸一致，可用于立体匹配
+
+    参数:
+        rows:          解压缩后的行数据列表
+        width:         传感器完整宽度 (默认 2048)
+        height:        传感器完整高度 (默认 1088)
+        roi_start_row: ROI 在传感器中的起始行 (从帧头 offset 65-66 读取)
 
     返回: (full_image, cropped_image)
+        full_image:    固定 width × height 的完整传感器图像
+        cropped_image: 内容区域裁剪+边距的图像 (用于快速预览)
     """
     if not rows:
         return None, None
 
-    height = len(rows)
+    # 创建固定尺寸的完整传感器图像
+    img = Image.new("L", (width, height), 0)
+    pixels = img.load()
 
-    # 寻找内容边界框
+    # 将 ROI 数据放置在正确的传感器位置
     min_x, max_x = width, 0
     min_y, max_y = height, 0
-    for y, row in enumerate(rows):
+
+    for row_idx, row in enumerate(rows):
+        y = roi_start_row + row_idx
+        if y >= height:
+            break
+        for x_pos, val in row.items():
+            if 0 <= x_pos < width:
+                pixels[x_pos, y] = min(255, val)
+                if row:
+                    min_x = min(min_x, x_pos)
+                    max_x = max(max_x, x_pos)
         if row:
-            min_x = min(min_x, min(row.keys()))
-            max_x = max(max_x, max(row.keys()))
             min_y = min(min_y, y)
             max_y = max(max_y, y)
 
     if max_x < min_x:
         return None, None
-
-    # 创建完整图像
-    img = Image.new("L", (width, height), 0)
-    pixels = img.load()
-    for y, row in enumerate(rows):
-        for x_pos, val in row.items():
-            if 0 <= x_pos < width:
-                pixels[x_pos, y] = min(255, val)
 
     # 裁剪到内容区域 (带边距)
     margin = 10
@@ -288,10 +324,28 @@ def rows_to_image(
 
 
 def parse_inner_header(data: bytes) -> dict:
-    """解析80字节内层帧头."""
+    """
+    解析80字节内层帧头.
+
+    帧头布局 (通过 Capstone 反汇编 fusionTrack64.dll 确定):
+      offset  0-3:   magic (0x66441819)
+      offset  4-7:   保留 (0)
+      offset  8-11:  device_timestamp
+      offset 12-15:  version (=1)
+      offset 16-19:  frame_counter
+      offset 20-23:  camera_flags (LEFT=0x00, RIGHT=0xC0)
+      offset 24-27:  保留 (0)
+      offset 28-31:  row_stride (=128, 即 width/128 的单位)
+      offset 64:     保留 (0)
+      offset 65-66:  ROI 起始行 (u16 LE)
+                     DLL中: [rsi + 0x45] 存储 width, [rsi + 0x47] 存储 height
+                     调用者从 [rax + 0x15] 和 [rax + 0x17] 读取
+                     验证: roi_start + roi_height == 1088 (全传感器高度)
+    """
     if len(data) < INNER_HEADER_BYTES:
         return {}
     u32 = struct.unpack("<20I", data[:INNER_HEADER_BYTES])
+    roi_start = struct.unpack_from("<H", data, ROI_START_OFFSET)[0]
     return {
         "magic": u32[0],
         "device_timestamp": u32[2],
@@ -299,6 +353,7 @@ def parse_inner_header(data: bytes) -> dict:
         "frame_counter": u32[4],
         "camera_flags": u32[5],
         "row_stride": u32[7],
+        "roi_start_row": roi_start,
     }
 
 
@@ -329,12 +384,18 @@ def main():
         "--width",
         type=int,
         default=IMAGE_WIDTH,
-        help=f"图像宽度 (默认: {IMAGE_WIDTH})",
+        help=f"传感器完整宽度 (默认: {IMAGE_WIDTH})",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=IMAGE_HEIGHT,
+        help=f"传感器完整高度 (默认: {IMAGE_HEIGHT})",
     )
     parser.add_argument(
         "--full",
         action="store_true",
-        help="同时保存完整尺寸图像",
+        help="同时保存完整尺寸图像 (2048×1088)",
     )
     args = parser.parse_args()
 
@@ -348,7 +409,7 @@ def main():
 
     print(f"解析 pcapng: {pcap_path}")
     print(f"输出目录:    {output_dir}")
-    print(f"图像宽度:    {args.width}")
+    print(f"传感器尺寸:  {args.width} × {args.height}")
     print()
 
     # 重组帧
@@ -376,15 +437,24 @@ def main():
             header = parse_inner_header(data)
             body = data[INNER_HEADER_BYTES:]
 
+            # 提取 ROI 起始行
+            roi_start = header.get("roi_start_row", 0)
+
             # 解压缩
             rows = decompress_v3_8bit(body, width=args.width)
 
             # 统计
             total_pixels = sum(len(r) for r in rows)
             active_rows = sum(1 for r in rows if r)
+            roi_height = len(rows)
 
-            # 渲染图像
-            img_full, img_crop = rows_to_image(rows, width=args.width)
+            # 渲染为固定尺寸图像 (width × height)
+            img_full, img_crop = rows_to_image(
+                rows,
+                width=args.width,
+                height=args.height,
+                roi_start_row=roi_start,
+            )
 
             if img_crop is None:
                 print(f"  帧 {idx}: token={frame['token']} - 无有效像素")
@@ -396,15 +466,16 @@ def main():
             enhanced.save(crop_path)
             total_saved += 1
 
-            # 保存完整图像 (可选)
+            # 保存完整传感器图像 (固定尺寸)
             if args.full and img_full:
                 full_path = output_dir / f"{name}_frame_{idx:03d}_full.png"
                 img_full.save(full_path)
 
             print(
                 f"  帧 {idx}: token={frame['token']:>8d} | "
-                f"{len(rows):>4d} 行 ({active_rows:>3d} 有效) | "
+                f"ROI: row {roi_start:>4d}+{roi_height:>4d} ({active_rows:>3d} 有效) | "
                 f"{total_pixels:>5d} 像素 | "
+                f"输出: {args.width}×{args.height} | "
                 f"裁剪: {img_crop.size[0]}×{img_crop.size[1]} → {crop_path.name}"
             )
 
