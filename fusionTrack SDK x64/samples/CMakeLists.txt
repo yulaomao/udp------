@@ -145,6 +145,11 @@ add_executable(ftk35_PTPBasic
 add_executable(ftk36_TaggerModes
                "${ATRACSYS_SDK_INSTALL_PATH}/samples/ftk36_TaggerModes.cpp" ${api_SRCS} ${additional_SRCS})
 
+add_executable(
+  ftk99_DumpAllData
+  "${ATRACSYS_SDK_INSTALL_PATH}/samples/stereo99_DumpAllData.cpp"
+  ${api_SRCS} ${additional_SRCS})
+
 add_executable(atnetExecutable "${ATRACSYS_SDK_INSTALL_PATH}/samples/atnet.cpp")
 
 if ("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
@@ -179,4 +184,5 @@ if (NOT (MSVC AND MSVC_VERSION LESS 1900))
 endif ()
 target_link_libraries(ftk35_PTPBasic Atracsys::SDK)
 target_link_libraries(ftk36_TaggerModes Atracsys::SDK)
+target_link_libraries(ftk99_DumpAllData Atracsys::SDK)
 target_link_libraries(atnetExecutable Atracsys::Atnet)
