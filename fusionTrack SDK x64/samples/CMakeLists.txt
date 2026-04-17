@@ -223,6 +223,28 @@ if(EXISTS "${REVERSE_ALGO_LIB_DIR}/StereoAlgoLib.cpp")
         stereo_algo_for_samples
     )
     message(STATUS "ftk99_CompareAlgorithms: enabled with stereo_algo from ${REVERSE_ALGO_LIB_DIR}")
+
+    # ===========================================================================
+    # stereo99_FullPipelineCompare — 完整逆向算法管线 vs SDK 全流程对比
+    #   从原始图像出发: detectBlobs → matchEpipolar → matchMarkers
+    #   每步结果与 SDK 对比, 重点监测工具识别
+    # ===========================================================================
+
+    add_executable(ftk99_FullPipelineCompare
+        "${ATRACSYS_SDK_INSTALL_PATH}/samples/stereo99_FullPipelineCompare.cpp"
+        ${api_SRCS} ${additional_SRCS})
+    target_include_directories(ftk99_FullPipelineCompare PRIVATE
+        "${REVERSE_ALGO_LIB_DIR}"
+    )
+    set_target_properties(ftk99_FullPipelineCompare PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+    target_link_libraries(ftk99_FullPipelineCompare
+        Atracsys::SDK
+        stereo_algo_for_samples
+    )
+    message(STATUS "ftk99_FullPipelineCompare: enabled with stereo_algo from ${REVERSE_ALGO_LIB_DIR}")
 else()
     message(WARNING "ftk99_CompareAlgorithms: reverse_algo_lib not found at ${REVERSE_ALGO_LIB_DIR}, skipping")
 endif()
