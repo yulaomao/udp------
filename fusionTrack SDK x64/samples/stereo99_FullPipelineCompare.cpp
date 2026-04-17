@@ -199,6 +199,15 @@ static bool isRejectedByWorkingVolume( uint32 statusBits )
 }
 
 // ===========================================================================
+// 对比配置常量
+// ===========================================================================
+
+static constexpr double kInfiniteDistance         = 1e9;     // 哨兵值: 表示无匹配
+static constexpr double kMaxCentroidMatchDistPx   = 10.0;    // 圆心匹配最大搜索距离 (pixels)
+static constexpr double kMaxFidPairingDistMM      = 100.0;   // 3D fiducial 配对最大距离 (mm)
+static constexpr size_t kNotFound                 = SIZE_MAX; // 未找到索引哨兵值
+
+// ===========================================================================
 // 每帧存储结构 — 积累所有数据, 最后统一对比
 // ===========================================================================
 
@@ -959,7 +968,7 @@ int main( int argc, char** argv )
         // 按面积匹配圆心, 计算质心距离 (左)
         for ( const auto& sdkDet : fr.sdk.leftRaw )
         {
-            double bestDist = 1e9;
+            double bestDist = kInfiniteDistance;
             for ( const auto& ourBlob : fr.ours.leftBlobs )
             {
                 if ( ourBlob.area != sdkDet.pixelCount ) continue;
@@ -968,7 +977,7 @@ int main( int argc, char** argv )
                 double dist = sqrt( dx * dx + dy * dy );
                 if ( dist < bestDist ) bestDist = dist;
             }
-            if ( bestDist < 10.0 )
+            if ( bestDist < kMaxCentroidMatchDistPx )
             {
                 centroidMatchDists.push_back( bestDist );
                 ++centroidMatchCount;
