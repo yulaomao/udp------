@@ -252,8 +252,9 @@ def parse_response(data: bytes) -> Optional[dict]:
     # 检查 words 是否与包大小匹配
     expected_size = words * 2
     if expected_size != len(data):
-        # 可能是截断的包，仍然尝试解析
-        pass
+        # 截断的包 — 仍然尝试解析 (UDP 可能丢失尾部)
+        logger.debug(f"包大小不匹配: words*2={expected_size}, actual={len(data)}, "
+                     f"tag=0x{tag:04x}")
 
     if tag == RESP_READ_DATA:
         # READ 响应: tag, words, cam_seq, pc_seq, data...
@@ -858,7 +859,8 @@ class FusionTrackClient:
         total_size_b = struct.unpack_from("<I", header, 8)[0] if len(header) >= 12 else 0
 
         # 从 pcapng 我们知道每个 chunk 读取的确切大小
-        # 我们使用与原始 SDK 相同的读取模式
+        # 这些大小来自对 full_01.pcapng 中 seq 7-10, 22-26, 30 的分析
+        # 注意: 不同型号或固件版本的设备可能有不同的校准数据大小
         chunk_sizes = {
             1: [1440, 1440, 1440, 1348],       # seq 7-10: 总共 5668 字节
             2: [1440, 1440, 1440, 1440, 440],   # seq 22-26: 总共 6200 字节
@@ -1111,7 +1113,7 @@ class FusionTrackClient:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def offline_extract(pcap_path: str, output_dir: str = "captured_images",
-                    max_frames: int = 5):
+                    max_frames: int = 10):
     """
     从 pcapng 文件提取并解压缩图像.
 
@@ -1160,6 +1162,8 @@ def offline_extract(pcap_path: str, output_dir: str = "captured_images",
 
             pkt_words = struct.unpack_from("<H", payload, 2)[0]
             if pkt_words * 2 != len(payload):
+                logger.debug(f"离线: 包大小不匹配 tag=0x{stream_tag:04x} "
+                             f"words*2={pkt_words * 2} actual={len(payload)}")
                 continue
 
             frame_token = struct.unpack_from("<I", payload, 12)[0]
