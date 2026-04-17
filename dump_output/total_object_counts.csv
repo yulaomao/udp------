@@ -1,0 +1,6 @@
+# Total object counts from last frame (may exceed buffer sizes)
+data_type,count
+LeftRawData,13
+RightRawData,13
+FiducialData,21
+MarkerData,0

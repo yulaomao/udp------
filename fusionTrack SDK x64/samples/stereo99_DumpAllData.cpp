@@ -141,10 +141,11 @@ int main( int argc, char** argv )
                      } ) != args.cend() );
     }
 
-    string cfgFile( "" );
-    deque< string > geomFiles{ "geometry072.ini" };
+    string cfgFile( "D:/test.json" );
+
+    deque< string > geomFiles{ "D:/geometry072.ini" };
     uint32 numFrames = 10u;
-    string outputDir = "./dump_output";
+    string outputDir = "D:/dump_output";
 
     if ( showHelp || args.empty() )
     {

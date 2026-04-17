@@ -1,0 +1,9 @@
+# Loaded Geometry Definition
+geometryId,420
+version,1
+pointsCount,3
+divotsCount,0
+# fiducial_index,pos_x_mm,pos_y_mm,pos_z_mm,normal_x,normal_y,normal_z,fiducial_type,angle_of_view
+0,107.967,24.9258,-1.2774,0,0,-1,33554432,-1
+1,208.567,43.2258,-1.2774,0,0,-1,33554432,-1
+2,250.767,24.9258,-1.2774,0,0,-1,33554432,-1

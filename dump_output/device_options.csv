@@ -1,0 +1,107 @@
+# Device Options
+option_name,option_id
+API version,602
+Acquisition frequency,130
+Active Wireless Markers IRLED mask,609
+Active Wireless Markers enable mask,606
+Active Wireless Markers info,610
+Active Wireless Markers reset ID,607
+Active Wireless Mode Enable,600
+Active Wireless Pairing Enable,605
+Active Wireless auto status streaming period,617
+Active Wireless battery state streaming,616
+Active Wireless button statuses streaming,615
+Active Wireless marker battery conversion factor,622
+Active Wireless marker battery warning release level,635
+Active Wireless marker battery warning request,633
+Active Wireless marker battery warning trigger level,634
+Active Wireless marker error,631
+Active Wireless marker error clear,632
+Active Wireless marker error request,630
+Active Wireless marker info,621
+Active Wireless marker info request,620
+Active Wireless marker integrator data,624
+Active Wireless marker integrator data request,623
+Active Wireless user LED colour setting,641
+Active Wireless user LED duration setting,642
+Active Wireless user LED request,640
+Alternate image integration time,305
+Blob Maximum Surface,401
+Blob Minimum Aspect Ratio,402
+Blob Minimum Surface,400
+Buzzer duration,676
+Buzzer period,675
+Buzzer repetition,677
+Calibration export,245
+Calibration processing datetime,242
+Calibration type,241
+Challenge result,272
+Copies lost counters,222
+Counter of corrupted frames,221
+Counter of lost frames,220
+Data Directory,3
+Data sending,200
+Device factory hardware version,103
+Device factory software version,102
+Device hardware version,101
+Device library version,21
+Device shock monitor version,104
+Device software version,100
+Distance matching tolerance,440
+Enables lasers,670
+Enables the user-LED,684
+Epipolar Maximum Distance,420
+Frame processing walltime,50
+Ignore hard working volume cuts,422
+Image Compression Threshold,300
+Image Integration Time,301
+Library Version,20
+Load environment,136
+Local UDP port,70
+MTU size,210
+Matching Maximum Missing Points,443
+Matching Tolerance,441
+Maximal wireless supported protocol version,603
+Maximum used MTU,75
+New marker reco algorithm,446
+Obliquity compensation enable,447
+PTP BMCA wait time,536
+PTP announce message interval,533
+PTP announce timeout,534
+PTP domain,532
+PTP module enable,530
+PTP sync message interval,535
+PTP synchronisation enable,531
+Picture rejection threshold,310
+Registration Mean Error,442
+Request challenge,271
+Resets lost counters,223
+SKU number,121
+Save environment,135
+Session ID,604
+Set cypher key,270
+Shock monitoring period,470
+Shock sensor threshold,473
+Strobe mode,303
+Symmetrise coordinates,421
+Temperature sensor index,460
+Temperature sensor location,465
+Temperature sensor reference,462
+Temperature sensor value,461
+Tracking range,444
+Tracking time span,445
+User-LED blue component,682
+User-LED frequency,683
+User-LED green component,681
+User-LED red component,680
+aCn EIO 1 RX mode,511
+aCn EIO 1 TX mode,512
+aCn EIO 1 state,510
+aCn EIO 2 RX mode,514
+aCn EIO 2 TX mode,515
+aCn EIO 2 state,513
+aCn UART speed,501
+aCn continuous timestamp mode delay,504
+aCn module enable,500
+aCn trigger duration,503
+aCn trigger start,502

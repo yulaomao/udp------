@@ -1,0 +1,14 @@
+# Stereo Calibration Parameters (extracted once)
+# Left Camera
+left_focal_length,2280.1,2280.34
+left_optical_centre,1038.83,536.922
+left_distortions,-0.0782232,0.122762,4.30936e-05,0.000202724,0.00422695
+left_skew,-9.22461e-06
+# Right Camera
+right_focal_length,2279.22,2279.43
+right_optical_centre,1023.23,525.475
+right_distortions,-0.0794544,0.147569,-9.51572e-05,0.000806292,-0.0263625
+right_skew,1.93295e-05
+# Stereo Extrinsics (right camera in left camera frame)
+translation,-420.246,1.7454,44.4958
+rotation,0.00143373,0.210131,-0.00334611
