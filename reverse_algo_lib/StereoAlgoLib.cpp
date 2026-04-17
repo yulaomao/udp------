@@ -85,7 +85,7 @@ StereoVision::StereoVision()
 StereoVision::~StereoVision() = default;
 
 const char* StereoVision::version() {
-    return "stereo_algo v2.0.0 (2026-04, based on verify_reverse_engineered.py)";
+    return "stereo_algo v2.1.0 (2026-04, SO reverse-engineered Match2D3D optimized)";
 }
 
 // ---------------------------------------------------------------------------
@@ -145,27 +145,27 @@ bool StereoVision::initialize(const StereoCalibration& cal) {
     for (int i = 0; i < 3; ++i) m_cal.translation[i] = f32(m_cal.translation[i]);
     for (int i = 0; i < 3; ++i) m_cal.rotation[i] = f32(m_cal.rotation[i]);
 
-    // Rodrigues → 旋转矩阵
-    m_R = rodrigues(cal.rotation[0], cal.rotation[1], cal.rotation[2]);
+    // Rodrigues → 旋转矩阵 (使用 float32 精度的值, 与 SDK 一致)
+    m_R = rodrigues(m_cal.rotation[0], m_cal.rotation[1], m_cal.rotation[2]);
     m_Rt = m_R.transpose();
-    m_t = { cal.translation[0], cal.translation[1], cal.translation[2] };
+    m_t = { m_cal.translation[0], m_cal.translation[1], m_cal.translation[2] };
 
-    // 内参矩阵 K_L
+    // 内参矩阵 K_L (使用 float32 精度的值, 与 SDK 一致)
     m_KL = {};
-    m_KL.m[0][0] = cal.leftCam.focalLength[0];
-    m_KL.m[0][1] = cal.leftCam.skew * cal.leftCam.focalLength[0];
-    m_KL.m[0][2] = cal.leftCam.opticalCentre[0];
-    m_KL.m[1][1] = cal.leftCam.focalLength[1];
-    m_KL.m[1][2] = cal.leftCam.opticalCentre[1];
+    m_KL.m[0][0] = m_cal.leftCam.focalLength[0];
+    m_KL.m[0][1] = m_cal.leftCam.skew * m_cal.leftCam.focalLength[0];
+    m_KL.m[0][2] = m_cal.leftCam.opticalCentre[0];
+    m_KL.m[1][1] = m_cal.leftCam.focalLength[1];
+    m_KL.m[1][2] = m_cal.leftCam.opticalCentre[1];
     m_KL.m[2][2] = 1.0;
 
-    // 内参矩阵 K_R
+    // 内参矩阵 K_R (使用 float32 精度的值, 与 SDK 一致)
     m_KR = {};
-    m_KR.m[0][0] = cal.rightCam.focalLength[0];
-    m_KR.m[0][1] = cal.rightCam.skew * cal.rightCam.focalLength[0];
-    m_KR.m[0][2] = cal.rightCam.opticalCentre[0];
-    m_KR.m[1][1] = cal.rightCam.focalLength[1];
-    m_KR.m[1][2] = cal.rightCam.opticalCentre[1];
+    m_KR.m[0][0] = m_cal.rightCam.focalLength[0];
+    m_KR.m[0][1] = m_cal.rightCam.skew * m_cal.rightCam.focalLength[0];
+    m_KR.m[0][2] = m_cal.rightCam.opticalCentre[0];
+    m_KR.m[1][1] = m_cal.rightCam.focalLength[1];
+    m_KR.m[1][2] = m_cal.rightCam.opticalCentre[1];
     m_KR.m[2][2] = 1.0;
 
     // K 逆
@@ -502,12 +502,17 @@ double StereoVision::pointToReverseEpipolarDistance(
 // ---------------------------------------------------------------------------
 // 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
 //
-// 基于 Match2D3D.h 的汇编还原, 并经 SDK dump 数据验证:
-//   1. 阈值筛选 (Match2D3D.h:615, epipolarMaxDistance)
-//   2. 双向验证 (前向+反向极线距离均在阈值内)
-//   3. 全候选输出 (所有通过验证的候选对均保留, probability=1/n)
+// 通过 libfusionTrack64.so 反汇编还原 (_findRightEpipolarMatch @ 0x28d0b0):
+//   1. 对每个左图点, 调用 rightEpipolarLine 计算右图极线
+//   2. 对每个右候选, 计算 |signedDist| (前向极线距离)
+//   3. 与 epipolarMaxDistance (float, 偏移 0x60) 比较, 仅保留 < 阈值的候选
+//   4. 无反向极线验证 (SDK 默认 symmetriseCoords = 0)
+//   5. probability = 1.0 / n_candidates
 //
-// 概率计算: probability = 1.0 / n_candidates (Match2D3D.h, ftkInterface.h:667)
+// SDK 默认参数 (从二进制常量区读取):
+//   cstEpipolarDistDef = 5.0f
+//   cstSymmetriseCoordsDef = 0 (禁用反向验证)
+//   cstKeepRejectedPointsDef = 1 (保留被 WorkingVolume 拒绝的点)
 // ---------------------------------------------------------------------------
 
 uint32_t StereoVision::matchEpipolar(
@@ -533,12 +538,13 @@ uint32_t StereoVision::matchEpipolar(
                                         m_cal.rightCam);
     }
 
-    // F^T 用于反向极线计算
-    Mat3 Ft = m_F.transpose();
-
     uint32_t matchCount = 0;
 
     // 对每个左图点, 找所有右图候选
+    // SDK 流程 (_findRightEpipolarMatch):
+    //   1. 计算前向极线 (rightEpipolarLine)
+    //   2. 仅检查前向距离 < epipolarMaxDistance
+    //   3. 不做反向极线验证 (symmetriseCoords 默认关闭)
     for (uint32_t li = 0; li < leftCount && matchCount < maxResults; ++li) {
         Vec3 fwdLine = computeEpipolarLine(leftNorms[li].x, leftNorms[li].y);
         if (fwdLine.x == 0.0 && fwdLine.y == 0.0 && fwdLine.z == 0.0) continue;
@@ -551,22 +557,13 @@ uint32_t StereoVision::matchEpipolar(
         std::vector<Candidate> candidates;
 
         for (uint32_t ri = 0; ri < rightCount; ++ri) {
-            // 前向: 左→右极线距离
+            // 前向: 左→右极线距离 (SDK: Line2f::signedDist + fabs)
             double fwdDist = std::fabs(pointToEpipolarDistance(
                 rightNorms[ri].x, rightNorms[ri].y, fwdLine));
 
             if (fwdDist >= epipolarMaxDistance) continue;
 
-            // 反向验证: 右→左极线距离也要在阈值内
-            // line_L = F^T * K_R * [rx, ry, 1]
-            Vec3 revLine = computeReverseEpipolarLine(rightNorms[ri].x, rightNorms[ri].y);
-            if (revLine.x == 0.0 && revLine.y == 0.0 && revLine.z == 0.0) continue;
-
-            double revDist = std::fabs(pointToReverseEpipolarDistance(
-                leftNorms[li].x, leftNorms[li].y, revLine));
-
-            if (revDist >= epipolarMaxDistance) continue;
-
+            // SDK 不做反向极线验证 (symmetriseCoords 默认为 0)
             candidates.push_back({ ri, fwdDist });
         }
 

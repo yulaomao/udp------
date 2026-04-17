@@ -19,7 +19,7 @@ namespace stereo_algo {
 // ===========================================================================
 
 StereoAlgoPipeline::StereoAlgoPipeline()
-    : m_epipolarMaxDist(3.0f)
+    : m_epipolarMaxDist(5.0f)  // SDK 默认值: cstEpipolarDistDef = 5.0f
 {
 }
 

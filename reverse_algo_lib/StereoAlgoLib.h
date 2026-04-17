@@ -2,11 +2,17 @@
 // StereoAlgoLib.h — 独立逆向工程双目视觉算法库
 //
 // 基于 verify_reverse_engineered.py 中验证通过的算法实现
-// 所有算法已通过 dump_output 数据验证与 SDK 输出精确匹配
+// + libfusionTrack64.so 反汇编分析优化
+// 所有算法已通过 dump_output/compare_output 数据验证与 SDK 输出匹配
 //
 // 独立命名空间 stereo_algo，避免与 SDK 或其他逆向代码冲突
 //
-// 验证精度 (详见 analysis_verification_optimization.md):
+// 关键逆向修复 (v2.1.0):
+//   - 极线匹配: SDK 默认仅前向极线验证 (symmetriseCoords=0)
+//   - 极线阈值: SDK 默认 5.0 px (cstEpipolarDistDef)
+//   - 标定参数: 全部使用 float32 精度 (Rodrigues, K矩阵, t向量)
+//
+// 验证精度:
 //   - 重投影:    mean 0.002/0.005 px (左/右)
 //   - 三角化:    mean 0.024 mm (好品质匹配)
 //   - 极线误差:  mean 0.001 px (相关系数 1.0)
@@ -206,11 +212,13 @@ public:
 
     /// 极线匹配+三角化 — 还原 DLL Match2D3D 完整管线
     ///
-    /// 实现经 SDK dump 数据验证的极线匹配流程:
-    ///   1. 阈值筛选: 极线距离 < epipolarMaxDistance
-    ///   2. 双向验证: 前向+反向极线距离均在阈值内
-    ///   3. 全候选输出: 所有通过验证的候选对均保留 (允许一对多)
+    /// 通过 libfusionTrack64.so 反汇编还原 (_findRightEpipolarMatch):
+    ///   1. 阈值筛选: |前向极线距离| < epipolarMaxDistance (仅前向)
+    ///   2. 全候选输出: 所有通过验证的候选对均保留 (允许一对多)
     ///      probability = 1/n (n = 同一左图点的候选数)
+    ///
+    /// SDK 默认参数 (从二进制常量读取):
+    ///   cstEpipolarDistDef = 5.0, symmetriseCoords = 0 (无反向验证)
     ///
     /// @param leftDets   左图 2D 检测点
     /// @param leftCount  左图检测数
@@ -218,13 +226,13 @@ public:
     /// @param rightCount 右图检测数
     /// @param outResults 输出匹配结果
     /// @param maxResults 最大输出数量
-    /// @param epipolarMaxDistance 极线最大距离 (pixels, 默认 3.0)
+    /// @param epipolarMaxDistance 极线最大距离 (pixels, SDK 默认 5.0)
     /// @return 实际匹配对数
     uint32_t matchEpipolar(
         const Detection2D* leftDets, uint32_t leftCount,
         const Detection2D* rightDets, uint32_t rightCount,
         EpipolarMatchResult* outResults, uint32_t maxResults,
-        double epipolarMaxDistance = 3.0) const;
+        double epipolarMaxDistance = 5.0) const;
 
     /// 计算反向极线 (F^T * right_ideal_pixel) — 用于右→左交叉验证
     Vec3 computeReverseEpipolarLine(double rightNormX, double rightNormY) const;
