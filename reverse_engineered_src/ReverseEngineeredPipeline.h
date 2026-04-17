@@ -21,6 +21,7 @@
 #pragma once
 
 #include "StereoCameraSystem.h"
+#include "markerReco/MatchMarkers.h"
 #include <ftkInterface.h>
 
 #include <vector>
@@ -121,6 +122,31 @@ public:
                                  uint32_t maxFiducials) const;
 
     // ------------------------------------------------------------------
+    // 工具识别 — 与 SDK 内部 MatchMarkers 对应
+    // ------------------------------------------------------------------
+
+    /// 注册几何体 (等价于 ftkSetRigidBody)
+    ///
+    /// @param geometry 几何体定义
+    /// @return true 如果注册成功
+    bool registerGeometry(const ftkRigidBody& geometry);
+
+    /// 移除已注册的几何体
+    bool clearGeometry(uint32_t geometryId);
+
+    /// 执行工具匹配 — 等价于 SDK 内部的 marker 识别流程
+    ///
+    /// @param fiducials     输入3D fiducial点 (来自 matchAndTriangulate)
+    /// @param fiducialCount 点数
+    /// @param markers       输出匹配结果 (预分配)
+    /// @param maxMarkers    最大输出数量
+    /// @return 匹配到的marker数量
+    uint32_t matchMarkers(const ftk3DFiducial* fiducials,
+                          uint32_t fiducialCount,
+                          ftkMarker* markers,
+                          uint32_t maxMarkers);
+
+    // ------------------------------------------------------------------
     // 配置
     // ------------------------------------------------------------------
 
@@ -135,6 +161,7 @@ public:
 
 private:
     measurement::StereoCameraSystem m_stereo;
+    measurement::markerReco::MatchMarkers m_matchMarkers;
 };
 
 }  // namespace reverse_engineered

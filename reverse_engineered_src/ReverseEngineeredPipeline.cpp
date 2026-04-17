@@ -87,6 +87,29 @@ uint32_t ReverseEngineeredPipeline::matchAndTriangulate(
 }
 
 // ---------------------------------------------------------------------------
+// 工具识别
+// ---------------------------------------------------------------------------
+
+bool ReverseEngineeredPipeline::registerGeometry(const ftkRigidBody& geometry)
+{
+    return m_matchMarkers.registerGeometry(geometry);
+}
+
+bool ReverseEngineeredPipeline::clearGeometry(uint32_t geometryId)
+{
+    return m_matchMarkers.clearGeometry(geometryId);
+}
+
+uint32_t ReverseEngineeredPipeline::matchMarkers(
+    const ftk3DFiducial* fiducials,
+    uint32_t fiducialCount,
+    ftkMarker* markers,
+    uint32_t maxMarkers)
+{
+    return m_matchMarkers.matchMarkers(fiducials, fiducialCount, markers, maxMarkers);
+}
+
+// ---------------------------------------------------------------------------
 // 配置
 // ---------------------------------------------------------------------------
 
