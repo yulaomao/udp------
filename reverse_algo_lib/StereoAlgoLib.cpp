@@ -627,23 +627,38 @@ static SVD3x3 svd3x3(const Mat3& M) {
     double eigvecs[3][3];
     symmetricEigen3x3(AtA.m, eigenvals, eigvecs);
 
-    SVD3x3 result;
-    // V from eigenvectors (columns)
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            result.V.m[i][j] = eigvecs[i][j];
+    // Sort eigenvalues in descending order (and eigenvectors accordingly)
+    // This is critical for the Kabsch reflection correction to work correctly:
+    // the smallest singular value must be at index [2].
+    int order[3] = {0, 1, 2};
+    if (eigenvals[order[0]] < eigenvals[order[1]]) std::swap(order[0], order[1]);
+    if (eigenvals[order[1]] < eigenvals[order[2]]) std::swap(order[1], order[2]);
+    if (eigenvals[order[0]] < eigenvals[order[1]]) std::swap(order[0], order[1]);
 
-    // Singular values = sqrt of eigenvalues
-    for (int i = 0; i < 3; ++i) {
-        result.S[i] = std::sqrt(std::max(0.0, eigenvals[i]));
+    SVD3x3 result;
+    // V from eigenvectors (columns), reordered
+    for (int j = 0; j < 3; ++j)
+        for (int i = 0; i < 3; ++i)
+            result.V.m[i][j] = eigvecs[i][order[j]];
+
+    // Singular values = sqrt of eigenvalues, reordered (descending)
+    for (int j = 0; j < 3; ++j) {
+        result.S[j] = std::sqrt(std::max(0.0, eigenvals[order[j]]));
     }
+
+    // Use relative threshold for near-zero singular values:
+    // treat S[j] as zero if it's negligible relative to the largest S[0].
+    // This prevents garbage U columns from barely-nonzero singular values
+    // (e.g. coplanar points where S[2] ≈ 1e-6 instead of exactly 0).
+    double svThreshold = result.S[0] * 1e-10;
+    if (svThreshold < 1e-12) svThreshold = 1e-12;
 
     // U = M * V * Σ^{-1}
     // For zero singular values or degenerate columns, complete the orthonormal basis
     Mat3 MV = M.mul(result.V);
     result.U = {};
     for (int j = 0; j < 3; ++j) {
-        if (result.S[j] > 1e-12) {
+        if (result.S[j] > svThreshold) {
             double inv = 1.0 / result.S[j];
             for (int i = 0; i < 3; ++i)
                 result.U.m[i][j] = MV.m[i][j] * inv;
@@ -658,7 +673,7 @@ static SVD3x3 svd3x3(const Mat3& M) {
         double colNorm = 0.0;
         for (int i = 0; i < 3; ++i)
             colNorm += result.U.m[i][j] * result.U.m[i][j];
-        if (colNorm < 1e-12) {
+        if (colNorm < 0.5) {
             zeroCol = j;
         } else {
             ++validCols;
